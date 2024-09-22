@@ -375,14 +375,14 @@ class ServerlessEnv(gym.Env):
     def _set_truncated(self):
         temp = self._container_matrix + self._action_matrix
         
-        temp_current_usage = np.sum(np.dot(self._container_matrix, Container_Resource_Usage),axis=0)
-        # Tài nguyên tiêu thụ tức thời do chuyển trạng thái
-        if (temp_current_usage[Resource_Type.CPU] > self.limited_resource[Resource_Type.CPU]
-            or temp_current_usage[Resource_Type.RAM] > self.limited_resource[Resource_Type.RAM]):
-            # Nếu tài nguyên tiêu thụ tức thời vượt quá giới hạn, thì không được phép chuyển trạng thái
-            self._action_matrix.fill(0)
-        else: 
-            pass
+        # temp_current_usage = np.sum(np.dot(self._container_matrix, Container_Resource_Usage),axis=0)
+        # # Tài nguyên tiêu thụ tức thời do chuyển trạng thái
+        # if (temp_current_usage[Resource_Type.CPU] > self.limited_resource[Resource_Type.CPU]
+        #     or temp_current_usage[Resource_Type.RAM] > self.limited_resource[Resource_Type.RAM]):
+        #     # Nếu tài nguyên tiêu thụ tức thời vượt quá giới hạn, thì không được phép chuyển trạng thái
+        #     self._action_matrix.fill(0)
+        # else: 
+        #     pass
 
         if (np.any(temp < 0)):
             # Nếu số lượng container nhỏ hơn 0, thì không được phép chuyển trạng thái
