@@ -1,5 +1,4 @@
 import numpy as np
-import math
 import uuid
 
 '''
@@ -58,24 +57,18 @@ class Request():
     def set_state(self, state):
         self.state = state
 
-def generate_requests(queue, current_time, size, duration, avg_requests_per_second, timeout, max_rq_active_time):
+def generate_requests(queue, current_time, size, avg_requests_per_second, timeout, max_rq_active_time):
     rng = np.random.default_rng()
-    num_requests = rng.poisson(avg_requests_per_second * duration)
-    inter_arrival_times = rng.exponential(1.0 / avg_requests_per_second, num_requests)
-    arrival_times = np.cumsum(inter_arrival_times)
+    num_requests = rng.poisson(avg_requests_per_second)
     num_new_rq = np.zeros(size,dtype=np.int32)
     
-    for arrival_time in arrival_times:
-        # Kiểm tra nếu thời gian đến vẫn nằm trong khoảng thời gian duration
-        if arrival_time < duration :
-            type = rng.integers(0, size)
-            
-            if max_rq_active_time["type"] == "random":
-                active_time = ran_norm_gen(max_rq_active_time["value"][type], max_rq_active_time["value"][type]/10)
-            else:
-                active_time = max_rq_active_time["value"][type] if max_rq_active_time["value"][type] else Request_active_time[type]
-            
-            request = Request(type=type, in_queue_time=int(arrival_time+current_time), timeout=timeout[type], active_time=active_time)    
-            queue[type].append(request)
-            num_new_rq[type] += 1
+    for i in range(num_requests):
+        type = rng.integers(0, size)
+        if max_rq_active_time["type"] == "random":
+            active_time = ran_norm_gen(max_rq_active_time["value"][type], max_rq_active_time["value"][type]/10)
+        else:
+            active_time = max_rq_active_time["value"][type] if max_rq_active_time["value"][type] else Request_active_time[type]
+        request = Request(type=type, in_queue_time=int(current_time), timeout=timeout[type], active_time=active_time)    
+        queue[type].append(request)
+        num_new_rq[type] += 1
     return num_new_rq
