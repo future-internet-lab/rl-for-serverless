@@ -2,7 +2,7 @@
 ## Code structure
 - rlss_env.py: Simulate serverless environment base-on Gymnasium library
 - models.py, dqn_agent.py: Include Neural network and Deep Q-learning . Most of source code of these two files comes from https://github.com/MOSAIC-LAB-AALTO/drl_based_trigger_selection
-- main_dqn.py: Include main function for training and testing DRL agorithms with serverless environtment.
+- main_dqn.py: Include main function for training and testing DRL agorithms with serverless environment.
 - utils: others function to log, debug and support for main function
 ## How to run code?
 So far we have only deployed the DQN algorithm for the purpose of testing the environment's behavior. 
