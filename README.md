@@ -10,7 +10,7 @@ To train model, run command:
 ```
 python main_dqn.py --train dqn
 ```
-After run following command, program will create 
+After run following command, program will create result/ folder with following structure
 ```
 your_main_folder/
 ├── {other files}
