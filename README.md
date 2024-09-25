@@ -23,7 +23,7 @@ your_main_folder/
             ├── live_average_rewards_DQN.png
             └── log.txt
 ```
-"dqn_network_" and "target_dqn_network_" contain model's weight. "log.txt" contain system's information and training logging for each step ad episode. You can also open "live_average_rewards_DQN.png" by vscode to monitor the training process. When the training process is complete, the program will also automatically model using the saved weights. Testing is saved in result/test folder.
+"dqn_network_" and "target_dqn_network_" contain model's weight. "log.txt" contain system's information and training logging for each step ad episode. You can also open "live_average_rewards_DQN.png" by vscode to monitor the training process. When the training process is complete, the program will also automatically test model using the saved weights. Testing's result is saved in result_{id}/test folder.
 
 You can also use saved model's weights of other training times by running following command, replace "n" with number episode you want to test and "your_main_folder/result/result_{id}" with your folder which contains model's weights file.
 ```
