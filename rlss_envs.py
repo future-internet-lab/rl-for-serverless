@@ -14,6 +14,11 @@ def compute_formula(num_box, num_ball):
     denominator = math.factorial(num_box - 1) * math.factorial(num_ball)
     return int(numerator/denominator)
 
+def uniform_random_time(a, b, step=1):
+    possible_values = np.arange(a, b + step, step)
+    return np.random.choice(possible_values)
+
+
 '''
 Define an index corresponding to the action that changes the container's state:
     - Destination state is changed from the original state: 1
@@ -42,8 +47,6 @@ class Container_States:
     Active = 4
     State_Name = ["Null", "Cold", "Warm Disk", "Warm CPU", "Active"]
 
-
-
    
 '''    
 Defines request state:
@@ -60,10 +63,10 @@ Define cases where state changes can occur:
 '''    
 Transitions = np.array([np.array([0, 0, 0, 0, 0]),    # No change
                         np.array([-1, 1, 0, 0, 0]),   # N -> L0
-                        np.array([-1, 0, 0, 1, 0]),   # N -> L2 (nhảy cóc)
+                        np.array([-1, 0, 0, 1, 0]),   # N -> L2 (skip)
                         np.array([1, -1, 0, 0, 0]),   # L0 -> N
                         np.array([0, -1, 1, 0, 0]),   # L0 -> L1
-                        np.array([0, -1, 0, 1, 0]),   # L0 -> L2 (nhảy cóc)
+                        np.array([0, -1, 0, 1, 0]),   # L0 -> L2 (skip)
                         np.array([0, 1, -1, 0, 0]),   # L1 -> L0
                         np.array([0, 0, -1, 1, 0]),   # L1 -> L2
                         np.array([0, 0, 1, -1, 0]),   # L2 -> L1
@@ -73,31 +76,33 @@ State_trans_mapping =np.array([np.array([1,2]),                 # N
                                 np.array([3,4,5]),              # L0
                                 np.array([6,7]),                # L1
                                 np.array([8])],dtype=object)    # L2   
+
     
 '''
 Define transition cost for moving to another states:
  state: [RAM, CPU, Power, Time]  
 '''    
-Transitions_cost = np.array([np.array([2, 0, 0, ]),         # No change 
-                             np.array([0, 0, 50, 5]),          # N -> L0
-                             np.array([1, 0, 2150, 62]),     # N -> L2
-                             np.array([0, 0, 50, 2]),          # L0 -> N
-                             np.array([0, 0, 2000, 50]),       # L0 -> L1
-                             np.array([1, 0, 2100, 57]),     # L0 -> L2
-                             np.array([0, 0, 50, 2]),          # L1 -> L0
-                             np.array([1, 0, 100, 7]),       # L1 -> L2
-                             np.array([0, 0, 400, 30])])       # L2 -> L1 
+Transitions_cost = np.array([np.array([2, 0, 0, 0]),                                                                                                                                                            # No change 
+                                    np.array([0, 0, 5 * (time := uniform_random_time(3,8)), time]),                                                                                                                   # N -> L0
+                                    np.array([1, 0, 5 * (time_1 := uniform_random_time(3,8)) + 40 * ((time_2 := uniform_random_time(5,60)) + (time_3 := uniform_random_time(3,5,step=0.5))), time_1 + time_2 + time_3]),       # N -> L2
+                                    np.array([0, 0, 5 * (time := uniform_random_time(1,5)), time]),                                                                                                                   # L0 -> N
+                                    np.array([0, 0, 40 * (time := uniform_random_time(5,60)), time]),                                                                                                                 # L0 -> L1
+                                    np.array([1, 0, 40 * ((time_1 := uniform_random_time(5,60)) + (time_2 := uniform_random_time(3,5,step=0.5))), time_1 + time_2]),                                                           # L0 -> L2
+                                    np.array([0, 0, 5 * (time := uniform_random_time(1,5)), time]),                                                                                                                   # L1 -> L0
+                                    np.array([1, 0, 40 * (time := uniform_random_time(3,5,step=0.5)), time]),                                                                                                         # L1 -> L2
+                                    np.array([0, 0, 10 * (time := uniform_random_time(30,40)), time])])                                                                                                               # L2 -> L1 
+
 
 '''
 Define resource usage for staying in each state:
  state: [RAM, CPU, Power]
     
 '''    
-Container_Resource_Usage =np.array([np.array([10, 10, 1000]),   # N
-                          np.array([20, 20, 2000]),             # L0
-                          np.array([30, 30, 3000]),             # L1
-                          np.array([40, 40, 4000]),             # L2
-                          np.array([40, 40, 4000])])            # A
+Container_Resource_Usage = np.array([np.array([0, 0, 0]),                     # N
+                                            np.array([0, 0, 0]),              # L0
+                                            np.array([0, 0, 0]),              # L1
+                                            np.array([20 * (time := uniform_random_time(5,60)), cpu_percent := 0.05, cpu_percent * 200]),                        # L2
+                                            np.array([20 * (time := uniform_random_time(5,60)), cpu_percent := 0.05 + (0.1 * time), cpu_percent * 200])])        # A
 
 
 class ServerlessEnv(gym.Env):
@@ -139,7 +144,7 @@ class ServerlessEnv(gym.Env):
         self.max_num_request = int(self.average_requests*self.timestep*2)  # Set the limit number of requests that can exist in the system 
         
         self.num_resources = len([attr for attr in vars(Resource_Type) if not attr.startswith('__')]) - 1    # The number of resource parameters (RAM, CPU, Power)
-        self.limited_resource = [4000,4000]  # Set limited amount of [RAM,CPU] of system
+        self.limited_resource = [1000 * 1024, 1000 * 100]  # Set limited amount of [RAM, CPU] of system
         self.energy_price = env_config["energy_price"] # unit cent/Jun/s 
         self.ram_profit = env_config["ram_profit"] # unit cent/Gb/s
         self.cpu_profit = env_config["cpu_profit"] # unit cent/vcpu/s
@@ -150,6 +155,7 @@ class ServerlessEnv(gym.Env):
         '''
         Initialize the state and other variables
         '''
+
         self.truncated = False
         self.terminated = False
         self.truncated_reason = ""
@@ -158,8 +164,8 @@ class ServerlessEnv(gym.Env):
         self.delay_penalty = 0
         self.profit = 0
         self.energy_cost = 0
-        self.current_resource_usage = np.zeros(self.num_resources,dtype=np.int64)
-        self.resource_consumption = np.zeros(self.num_resources,dtype=np.int64)
+        self.current_resource_usage = np.zeros(self.num_resources,dtype=np.float64)
+        self.resource_consumption = np.zeros(self.num_resources,dtype=np.float64)
         
 
         self._in_queue_requests = [[] for _ in range(self.num_service)] # Requests in queue until current time
@@ -184,11 +190,11 @@ class ServerlessEnv(gym.Env):
         self._negative_action_matrix = self._action_matrix * (self._action_matrix < 0)
         self.formatted_action = np.zeros((2,4),dtype=np.int32)
         
-        # TODO: thử random các trạng thái khởi tạo ma trận container 
-        # Tạo ma trận dựa trên self.num_container
+        # TODO: try random initial state of container matrix 
+        # Create matrix based on self.num_container
         self._container_matrix_tmp = np.hstack((
-            self.num_container[:, np.newaxis],  # Chuyển đổi mảng thành ma trận cột
-            np.zeros((self.num_container.size, self.num_ctn_states-1), dtype=np.int16)  # Ma trận các số 0 kích thước 4x3
+            self.num_container[:, np.newaxis],  # Convert array to column matrix
+            np.zeros((self.num_container.size, self.num_ctn_states-1), dtype=np.int16)  # Matrix of zeros with size 4x3
         )).astype(np.int16)
         # self._container_matrix_tmp = self._create_random_container_matrix()
         self._container_matrix = self._container_matrix_tmp.copy()
@@ -206,6 +212,7 @@ class ServerlessEnv(gym.Env):
         # Action space
         self.raw_action_space = self._action_space_init() 
         self.action_size = self._num_action_cal()
+        # Only run when initializing the environment
         self.action_space = spaces.Discrete(self.action_size,seed=42)
         
         # Action masking
@@ -216,27 +223,25 @@ class ServerlessEnv(gym.Env):
         self.render_mode = env_config["render_mode"]
         self.log_file = env_config["log_path"]
 
-
-            
-            
-    # Tạo không gian action
+     
+    # Create action space
     def _action_space_init(self):
         high_matrix = np.zeros((2,self.num_service),dtype=np.int16)
         for service in range(self.num_service):
             high_matrix[0][service]=self.num_container[service]
             high_matrix[1][service]= self.num_trans 
             
-        action_space = spaces.Box(low=1,high=high_matrix,shape=(2,self.num_service), dtype=np.int16) # Num contaier * num transition * num service
+        action_space = spaces.Box(low=1,high=high_matrix,shape=(2,self.num_service), dtype=np.int16) # Num container * num transition * num service
         return action_space
     
-    # Tính số lượng phần tử của action space
+    # Calculate the number of elements in the action space
     def _num_action_cal(self):
         num_action = 1
         for service  in range(self.num_service): 
             num_action *= (1 + self.num_trans*self.num_container[service])
         return int(num_action)
 
-    # Tạo không gian state
+    # Create state space
     def _state_space_init(self):
         low_matrix = np.zeros((self.num_service, self.num_ctn_states+1),dtype=np.int16)
         high_matrix = np.zeros((self.num_service, self.num_ctn_states+1),dtype=np.int16)
@@ -253,7 +258,7 @@ class ServerlessEnv(gym.Env):
         state_space = spaces.Box(low=low_matrix, high=high_matrix, shape=(self.num_service, self.num_ctn_states+1), dtype=np.int16)  # num_service *(num_container_state + num_request_state)
         return state_space
     
-    # Tính số lượng phần tử của action space
+    # Calculate the number of elements in the state space
     def _num_state_cal(self):
         ret = 1
         for service in range(self.num_service):
@@ -298,7 +303,7 @@ class ServerlessEnv(gym.Env):
         '''
         Define a function that returns the values of observation
         ''' 
-        # Tính ma trận môi trường
+        # Calculate environment matrix
         self._cal_env_matrix()   
         return spaces.flatten(self.raw_state_space,self._env_matrix)
 
@@ -317,14 +322,14 @@ class ServerlessEnv(gym.Env):
         self.current_time = 0  # Start at time 0
         self.current_resource_usage.fill(0)
 
-        # Reset giá trị của self._container_matrix
+        # Reset the value of self._container_matrix
         self._container_matrix = self._container_matrix_tmp.copy()
         
         # Observation matrices cache
         self._env_matrix.fill(0)
         self._env_matrix[:,0:self.num_ctn_states]=self._container_matrix
         
-        self.action_mask.fill(0)
+        # self.action_mask.fill(0)
         self._cal_action_mask()
         
         self._in_queue_requests = [[] for _ in range(self.num_service)] 
@@ -350,36 +355,43 @@ class ServerlessEnv(gym.Env):
         
         return observation
      
-                    
-                    
+           
     def _receive_new_requests(self):
         num_new_rq = rq.generate_requests(self._in_queue_requests,
                                            size=self.num_service,
                                            current_time=self.current_time, 
-                                           duration=self.timestep,
                                            avg_requests_per_second=self.average_requests,
                                            timeout=self.rq_timeout,
                                            max_rq_active_time=self.max_rq_active_time)
         self.num_all_rq += num_new_rq
-        self.num_new_rq = num_new_rq
-        # for request in new_requets:
-        #     self._in_queue_requests[request.type].append(request)
-        # Sắp xếp lại request trong queue theo thời gian đến hệ thống => FCFS
-        for service in range(self.num_service):
-            self._in_queue_requests[service].sort(key=lambda x: x.in_queue_time)
+        self.num_new_rq += num_new_rq
             
     def _set_truncated(self):
         temp = self._container_matrix + self._action_matrix
+        
+        # temp_current_usage = np.sum(np.dot(self._container_matrix, Container_Resource_Usage),axis=0)
+        # # Instantaneous resource consumption due to state transition
+        # if (temp_current_usage[Resource_Type.CPU] > self.limited_resource[Resource_Type.CPU]
+        #     or temp_current_usage[Resource_Type.RAM] > self.limited_resource[Resource_Type.RAM]):
+        #     # If instantaneous resource consumption exceeds the limit, state transition is not allowed
+        #     self._action_matrix.fill(0)
+        # else: 
+        #     pass
+
         if (np.any(temp < 0)):
+            # If the number of containers is less than 0, state transition is not allowed
             self.truncated = True
             self.truncated_reason = "Wrong number action"
             print(self.truncated_reason)
             print(self._container_matrix)
             print(self._action_matrix)
             print(self.current_action)
-            print(env.action_mask[self.current_action])
+            print(self.action_mask[self.current_action])
             print(self.number_to_action(self.current_action))
             print(self.current_time)
+        else: 
+            pass
+            
         
             
     def _set_terminated(self):
@@ -387,55 +399,58 @@ class ServerlessEnv(gym.Env):
             self.terminated = True                      
             
     def _handle_env_change(self):
+        self._positive_action_matrix = self._action_matrix * (self._action_matrix > 0)
+        self._negative_action_matrix = self._action_matrix * (self._action_matrix < 0)
+        
         self._container_matrix += self._negative_action_matrix
         relative_time = 0
         while relative_time < self.timestep:
+            self._receive_new_requests()
             self.current_resource_usage = np.sum(np.dot(self._container_matrix,Container_Resource_Usage),axis=0)
             for service in range(self.num_service):
-                # Chuyển trạng thái container 
+                # State transition of container 
                 trans_num  = self.formatted_action[0][service]
                 trans_type = self.formatted_action[1][service]
                 
                 if relative_time == Transitions_cost[trans_type][Resource_Type.Time]:
                     self._container_matrix[service] += self._positive_action_matrix[service]
                 elif relative_time < Transitions_cost[trans_type][Resource_Type.Time]:
-                    # Tài nguyên tiêu thụ tức thời do chuyển trạng thái   
+                    # Instantaneous resource consumption due to state transition   
                     self.current_resource_usage[Resource_Type.CPU] += Transitions_cost[trans_type][Resource_Type.CPU]*trans_num 
                     self.current_resource_usage[Resource_Type.RAM] += Transitions_cost[trans_type][Resource_Type.RAM]*trans_num 
                     self.current_resource_usage[Resource_Type.Power] += Transitions_cost[trans_type][Resource_Type.Power]*trans_num
                 
                 # Handle requests in queue
                 for rq in self._in_queue_requests[service][:]:
-                    if rq.in_queue_time <= self.current_time:
-                        # Giải phóng các request bị time_out
-                        if self.current_time == rq.time_out + rq.in_queue_time:
-                            rq.set_state(Request_States.Time_Out)
-                            rq.set_out_system_time(self.current_time)
-                            self._timeout_requests[service].append(rq)
+                    # Release requests that have timed out
+                    if self.current_time == rq.time_out + rq.in_queue_time:
+                        rq.set_state(Request_States.Time_Out)
+                        rq.set_out_system_time(self.current_time)
+                        self._timeout_requests[service].append(rq)
+                        self._in_queue_requests[service].remove(rq)
+                    else:
+                        # If there are available resources, push the request into the system
+                        if self._container_matrix[service][Container_States.Warm_CPU] > 0:
+                            rq.set_state(Request_States.In_System)
+                            rq.set_in_system_time(self.current_time)
+                            self.num_accepted_rq[service] += 1
+                            self._in_system_requests[service].append(rq)
                             self._in_queue_requests[service].remove(rq)
-                        else:
-                            # Nếu còn tài nguyên trống, đẩy request vào 
-                            if self._container_matrix[service][Container_States.Warm_CPU] > 0:
-                                rq.set_state(Request_States.In_System)
-                                rq.set_in_system_time(self.current_time)
-                                self.num_accepted_rq[service] += 1
-                                self._in_system_requests[service].append(rq)
-                                self._in_queue_requests[service].remove(rq)
-                                self._container_matrix[service][Container_States.Active] += 1
-                                self._container_matrix[service][Container_States.Warm_CPU] -= 1
-                                
-                                # Delay penalty được một lần duy nhất tại thời điểm request được hệ thống accept
-                                delay_time = rq.in_system_time - rq.in_queue_time
-                                self.delay_penalty += Request_Resource_Usage[service][Resource_Type.RAM]*self.ram_profit*delay_time
-                                self.delay_penalty += Request_Resource_Usage[service][Resource_Type.CPU]*self.cpu_profit*delay_time
-                                
-                                self.cu_rq_delay[service] += delay_time
+                            self._container_matrix[service][Container_States.Active] += 1
+                            self._container_matrix[service][Container_States.Warm_CPU] -= 1
+                            
+                            # Delay penalty is applied only once at the time the request is accepted by the system
+                            delay_time = rq.in_system_time - rq.in_queue_time
+                            self.delay_penalty += Request_Resource_Usage[service][Resource_Type.RAM]*self.ram_profit*delay_time
+                            self.delay_penalty += Request_Resource_Usage[service][Resource_Type.CPU]*self.cpu_profit*delay_time
+                            
+                            self.cu_rq_delay[service] += delay_time
 
                 # Handle requests in system
                 for rq in self._in_system_requests[service][:]:
-                    # Tài nguyên tiêu thụ bởi request
+                    # Resource consumption by request
                     self.current_resource_usage += Request_Resource_Usage[service]
-                    # Giải phóng các request đã thực hiện xong
+                    # Release requests that have been completed
                     if rq.active_time == self.current_time - rq.in_system_time:
                         rq.set_state(Request_States.Done)
                         rq.set_out_system_time(self.current_time)
@@ -444,12 +459,12 @@ class ServerlessEnv(gym.Env):
                         self._container_matrix[service][Container_States.Active] -= 1
                         self._container_matrix[service][Container_States.Warm_CPU] += 1
                         
-                        # Abandone penalty được một lần duy nhất tại thời điểm request hết timeout và bị hệ thống reject
+                        # Abandon penalty is applied only once at the time the request times out and is rejected by the system
                         in_queue_time = rq.out_system_time - rq.in_queue_time
                         self.abandone_penalty += Request_Resource_Usage[service][Resource_Type.RAM]*self.ram_profit*in_queue_time
                         self.abandone_penalty += Request_Resource_Usage[service][Resource_Type.CPU]*self.ram_profit*in_queue_time
                 
-                # Profit của các request được chấp nhận vào hệ thống trong 1 giây
+                # Profit of requests accepted into the system in 1 second
                 self.profit += Request_Resource_Usage[service][Resource_Type.RAM]*self.ram_profit*self._container_matrix[service][Container_States.Active]
                 self.profit += Request_Resource_Usage[service][Resource_Type.CPU]*self.cpu_profit*self._container_matrix[service][Container_States.Active]
             
@@ -483,8 +498,6 @@ class ServerlessEnv(gym.Env):
         for service in action[1]:
             action_unit.append(Transitions[service])
         self._action_matrix = action_coefficient @ action_unit
-        self._positive_action_matrix = self._action_matrix * (self._action_matrix > 0)
-        self._negative_action_matrix = self._action_matrix * (self._action_matrix < 0)
         return action
         
     def _clear_cache(self):
@@ -498,6 +511,7 @@ class ServerlessEnv(gym.Env):
         self.delay_penalty = 0
         self.profit = 0
         self.energy_cost = 0
+        self.num_new_rq.fill(0)
         self.num_in_queue_rq.fill(0)
         self.num_in_sys_rq.fill(0)
         self.num_done_rq.fill(0)
@@ -515,7 +529,6 @@ class ServerlessEnv(gym.Env):
         
     def step(self, action):
         self._pre_step(action)
-        self._receive_new_requests()   # Nhận request đến hệ thống trong timestep
         self._handle_env_change()   
         self._cal_system_evaluation()
         observation = self._get_obs()
@@ -609,4 +622,3 @@ if __name__ == "__main__":
             break
             env.reset()
         else: continue
-    
