@@ -1,6 +1,6 @@
 import random
 from utils.nn_utils import Transition, ReplayMemory
-from models import GenericNetwork
+from utils.models import GenericNetwork
 import torch as T
 import torch.nn.functional as F
 
