@@ -1,0 +1,38 @@
+[
+    {
+        "render_mode": null,
+        "num_service": 1,
+        "timestep": 120,
+        "num_container": [
+            100
+        ],
+        "container_lifetime": 28800,
+        "rq_timeout": [
+            20
+        ],
+        "average_requests": 2,
+        "max_rq_active_time": {
+            "type": "random",
+            "value": [
+                60
+            ]
+        },
+        "energy_price": 1e-07,
+        "ram_profit": 0.0001,
+        "cpu_profit": 0.0001,
+        "alpha": 0.05,
+        "beta": 0.05,
+        "gamma": 0.9
+    },
+    {
+        "episodes": 1000,
+        "batch_size": 32,
+        "max_env_steps": 50,
+        "batch_update": 20,
+        "replay_buffer_size": 50000,
+        "hidden_size": 64,
+        "gamma": 0.99,
+        "epsilon": 0.05,
+        "learning_rate": 0.0005
+    }
+]

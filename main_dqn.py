@@ -12,7 +12,8 @@ from utils.log_plot import plot_log_fig
 
 now = datetime.now()
 folder_base = f"result/result_{now.month}_{now.day}_{now.hour}_{now.minute}_{now.second}"
-    
+os.makedirs(folder_base, exist_ok=True)
+
 # testing the trained model
 def test(args, env_config, drl_hyper_params):
     global folder_base
@@ -83,8 +84,11 @@ def test(args, env_config, drl_hyper_params):
             f.write("\n********************************************************************************\n\n\n")
     
     plot_log_fig(folder_name)
+
+
 # Training the model            
 def train(args, env_config, drl_hyper_params):
+    global folder_base
     folder_name = os.path.join(folder_base, 'train')
     os.makedirs(folder_name, exist_ok=True)
     
@@ -176,42 +180,41 @@ def train(args, env_config, drl_hyper_params):
         agent.save_models()
         
     # Plotting the reward/avg_reward
-    if args['train'] is not None:
-        plt.plot((np.arange(len(avg_reward_list)) + 1), avg_reward_list)
-        plt.xlabel('Episodes')
-        plt.ylabel('Average Reward')
-        plt.title('Average Reward vs Episodes')
-        plt.savefig(os.path.join(folder_name, 'average_rewards_{}.png'.format(args['train'])))
-        plt.close()
+    plt.plot((np.arange(len(avg_reward_list)) + 1), avg_reward_list)
+    plt.xlabel('Episodes')
+    plt.ylabel('Average Reward')
+    plt.title('Average Reward vs Episodes')
+    plt.savefig(os.path.join(folder_name, 'average_rewards_{}.png'.format(args['model'])))
+    plt.close()
 
-        plt.plot(cumulative_rewards)
-        plt.plot(avg_reward_list)
-        plt.legend(["Reward", "{}-episode average".format(drl_hyper_params["max_env_steps"])])
-        plt.title("Reward history")
-        plt.savefig(os.path.join(folder_name, 'Live_average_rewards_{}.png'.format(args['train'])))
-        plt.close()
+    plt.plot(cumulative_rewards)
+    plt.plot(avg_reward_list)
+    plt.legend(["Reward", "{}-episode average".format(drl_hyper_params["max_env_steps"])])
+    plt.title("Reward history")
+    plt.savefig(os.path.join(folder_name, 'Live_average_rewards_{}.png'.format(args['model'])))
+    plt.close()
 
-        # Saving all sort of statistics
-        with open(os.path.join(folder_name, 'action_state_information_{}.txt'.format(args['train'])), "a") as w:
-            w.write(str(tab))
-        with open(os.path.join(folder_name, 'detailed_action_selection_{}.txt'.format(args['train'])), "a") as w:
+    # Saving all sort of statistics
+    with open(os.path.join(folder_name, 'action_state_information_{}.txt'.format(args['model'])), "a") as w:
+        w.write(str(tab))
+    with open(os.path.join(folder_name, 'detailed_action_selection_{}.txt'.format(args['model'])), "a") as w:
             w.write(str(agent.action))
             
-    # with open(os.path.join(folder_name, 'reward_list_{}.txt'.format(args['train'])), "w") as w:
+    # with open(os.path.join(folder_name, 'reward_list_{}.txt'.format(args['model'])), "w") as w:
     #     w.write(str(rewards))
-    with open(os.path.join(folder_name, 'reward_list_{}.txt'.format(args['train'])), "w") as w:
+    with open(os.path.join(folder_name, 'reward_list_{}.txt'.format(args['model'])), "w") as w:
         w.write(str(cumulative_rewards))
-    with open(os.path.join(folder_name, 'average_reward_list_{}.txt'.format(args['train'])), "w") as w:
+    with open(os.path.join(folder_name, 'average_reward_list_{}.txt'.format(args['model'])), "w") as w:
         w.write(str(avg_reward_list))    
 
 def main(args):
     # Environment variable
     num_service = 1
     timestep = 120
-    num_container = [1000]
+    num_container = [400]
     container_lifetime = 3600*8
     rq_timeout = [20]
-    average_requests = 160/timestep
+    average_requests = 8/3
     max_rq_active_time = {"type": "random", "value": [60]}
     energy_price = 10e-8 
     ram_profit = 10e-5
@@ -222,14 +225,14 @@ def main(args):
 
 
     # DQN_agent
-    episodes = 10                        # Total episodes for the training
+    episodes = 4000                        # Total episodes for the training
     batch_size = 32                        # Total used memory in memory replay mode
     max_env_steps = 50                    # Max steps per episode
     batch_update = 20
     
     replay_buffer_size=50000
     hidden_size=64
-    gamma=0.1
+    gamma=0.15 # Testing in range [0.1,0.25, step=0.05]
     learning_rate=5e-4
     eps = 0.05
     
@@ -238,31 +241,38 @@ def main(args):
     # eps_end = 0.01
     # eps_decay = 0.995
 
-    env_config = {"render_mode":None, 
-                  "num_service": num_service,
-                  "timestep": timestep,
-                  "num_container": num_container,
-                  "container_lifetime": container_lifetime,
-                  "rq_timeout": rq_timeout,
-                  "average_requests": average_requests,
-                  "max_rq_active_time": max_rq_active_time,
-                  "energy_price": energy_price, 
-                  "ram_profit": ram_profit,
-                  "cpu_profit": cpu_profit,
-                  "alpha": alpharw,
-                  "beta": betarw,
-                  "gamma": gammarw}
-    
-    drl_hyper_params = {"episodes": episodes,                       
-                        "batch_size" :batch_size,                        
-                        "max_env_steps": max_env_steps,                    
-                        "batch_update" : batch_update,
-                        "replay_buffer_size": replay_buffer_size,
-                        "hidden_size": hidden_size,
-                        "gamma": gamma,
-                        "epsilon": eps,
-                        "learning_rate":learning_rate}
-    
+    if args['hyperparameters']: 
+        with open(args['hyperparameters'],'r') as hp:
+            env_config, drl_hyper_params = json.load(hp)
+    else: 
+        env_config = {"render_mode":None, 
+                    "num_service": num_service,
+                    "timestep": timestep,
+                    "num_container": num_container,
+                    "container_lifetime": container_lifetime,
+                    "rq_timeout": rq_timeout,
+                    "average_requests": average_requests,
+                    "max_rq_active_time": max_rq_active_time,
+                    "energy_price": energy_price, 
+                    "ram_profit": ram_profit,
+                    "cpu_profit": cpu_profit,
+                    "alpha": alpharw,
+                    "beta": betarw,
+                    "gamma": gammarw}
+        
+        drl_hyper_params = {"episodes": episodes,                       
+                            "batch_size" :batch_size,                        
+                            "max_env_steps": max_env_steps,                    
+                            "batch_update" : batch_update,
+                            "replay_buffer_size": replay_buffer_size,
+                            "hidden_size": hidden_size,
+                            "gamma": gamma,
+                            "epsilon": eps,
+                            "learning_rate":learning_rate}
+        
+    with open(os.path.join(folder_base,"hyperparameters.txt"), 'w') as file:
+        json.dump([env_config, drl_hyper_params], file, indent=4)
+
 
     if args['observe'] is not None:
         test(args, env_config, drl_hyper_params)
@@ -272,8 +282,9 @@ def main(args):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Parsing the type of DRL/RL to be tested')
-    parser.add_argument('-t', '--train', help='Train DRL/RL', required=True)
+    parser.add_argument('-m', '--model', help='Train DRL/RL', required=True)
+    parser.add_argument('-p', '--hyperparameters', help='File contains hyperparameters of env and model')
     parser.add_argument('-o', '--observe', help='Observe a trained DRL/RL')
-    parser.add_argument('-f', '--folder', help='Logging folder')
+    parser.add_argument('-f', '--folder', help='Result folder')
     args = vars(parser.parse_args())
     main(args)

@@ -100,9 +100,9 @@ def plot_log_fig(log_folder):
     ]
     avg_acceptance_ratio = np.array(avg_acceptance_ratio)
     
-    cu_rq_delays = np.array([np.mean(cu_rq_delays[::num_step],axis=0)])
-    cu_accepted_rqs = np.array([np.mean(cu_accepted_rqs[::num_step],axis=0)])
-    avg_cu_rq_delay = cu_rq_delays / cu_accepted_rqs
+    cu_rq_delays = np.array([np.mean(cu_rq_delays[(num_step-1)::num_step],axis=0)])
+    cu_accepted_rqs = np.array([np.mean(cu_accepted_rqs[(num_step-1)::num_step],axis=0)])
+    avg_cu_rq_delay = np.divide(cu_rq_delays, cu_accepted_rqs)
     
     avg_container_state = np.array([
         np.mean(container_states[i::num_step],axis=0) 
@@ -121,7 +121,7 @@ def plot_log_fig(log_folder):
     # Plot acceptance ratio
     plt.figure()
     for i in range(service_num):
-        plt.plot(avg_acceptance_ratio[:, i], label=f'Service {i+1}')
+        plt.plot(timesteps, avg_acceptance_ratio[:, i], label=f'Service {i+1}')
     plt.xlabel('Time (seconds)')
     plt.ylabel('Acceptance Ratio')
     plt.title('Avg Acceptance Ratio Over {} Episodes'.format(training_num))
@@ -159,11 +159,7 @@ def plot_log_fig(log_folder):
     # Plot container state
     for service in range(service_num):
         plt.figure()
-
-        # Plot stacked area chart
         plt.stackplot(timesteps, avg_container_state[service].T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
-
-        # Thêm nhãn, tiêu đề, và legend
         plt.xlabel('Time')
         plt.ylabel('Number container')
         plt.title('Ratio between container states of service {}'.format(service))
