@@ -10,7 +10,7 @@
         "rq_timeout": [
             20
         ],
-        "average_requests": 2,
+        "average_requests": 0.1,
         "max_rq_active_time": {
             "type": "random",
             "value": [
@@ -25,13 +25,13 @@
         "gamma": 0.9
     },
     {
-        "episodes": 1000,
+        "episodes": 4000,
         "batch_size": 32,
         "max_env_steps": 50,
         "batch_update": 20,
         "replay_buffer_size": 50000,
         "hidden_size": 64,
-        "gamma": 0.99,
+        "gamma": 0.2,
         "epsilon": 0.05,
         "learning_rate": 0.0005
     }

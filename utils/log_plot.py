@@ -1,167 +1,169 @@
-import re
-from env.rlss_envs import Container_States
-import os
+from rlss_env.rlss_envs import Container_States
+import os 
 import matplotlib.pyplot as plt
 import numpy as np
+import json
+import pickle
 
-num_ctn_states = len(Container_States.State_Name)
 
-def plot_log_fig(log_folder):
-    log_file = os.path.join(log_folder, 'log.txt')
+def append_to_json(log_data, log_file):
+    if os.path.exists(log_file):
+        with open(log_file, 'a') as json_file:
+            json_file.write(json.dumps(log_data, indent=4, separators=(',', ': ')))
+    else:
+        with open(log_file, 'w') as json_file:
+            json_file.write(json.dumps(log_data, indent=4, separators=(',', ': ')))
 
-    with open(log_file, 'r') as file:
-        log_data = file.read()
+def append_to_pickle(log_data, log_file):
+    if os.path.exists(log_file):
+        with open(log_file, 'ab') as pkl_file:
+            pickle.dump(log_data, pkl_file)
+    else:
+        with open(log_file, 'wb') as pkl_file:
+            pickle.dump(log_data, pkl_file)
+
+
+def calc_accept_ratio(
+    in_sys_rqs: list, 
+    done_rqs: list, 
+    in_queue_rqs: list, 
+    new_rqs: list
+) -> list:
+    acceptance_ratio = []
     
-    training_num_pattern = re.compile(r'Test trainned model (\d+) times') 
-    training_num_match = training_num_pattern.search(log_data)   
-    training_num = int(training_num_match.group(1))
+    for i in range(len(new_rqs)):
+        in_sys = in_sys_rqs[i]
+        done = done_rqs[i]
+        prev_in_sys = in_sys_rqs[i - 1] if i > 0 else 0
+        prev_in_queue = in_queue_rqs[i - 1] if i > 0 else 0
+        new_requests = new_rqs[i]    
+        ratio = (in_sys + done - prev_in_sys) / (prev_in_queue + new_requests)
+        acceptance_ratio.append(ratio)
     
-    service_num_pattern = re.compile(r'"num_service": (\d+),')
-    service_num_match = service_num_pattern.search(log_data)   
-    service_num = int(service_num_match.group(1))
+    return acceptance_ratio
 
-    timestep_pattern = re.compile(r'"timestep": (\d+),')
-    timestep_match = timestep_pattern.search(log_data)
-    if timestep_match:
-        timestep_value = int(timestep_match.group(1))
 
-    timestep_blocks = re.findall(r'SYSTEM EVALUATION PARAMETERS IN TIMESTEP \d+:.*?(?=SYSTEM EVALUATION PARAMETERS IN TIMESTEP \d+:|\Z)', log_data, re.S)
+def plot_log_fig(log_file, training_num, timestep_value, num_service):
+    log_folder = os.path.dirname(log_file)
+    with open(log_file, 'r') as json_file:
+        data = json.load(json_file)
 
-    new_rqs = []
-    in_queue_rqs = []
-    in_sys_rqs = []
-    done_rqs = []
-    rewards = []
-    energy_consumptions = []
-    cu_rq_delays = []
-    container_states = []
-    cu_accepted_rqs = []
+    e = 0
+    for key, ep in data.items():
+        new_rqs =  [[] for _ in range(num_service)]
+        in_queue_rqs = [[] for _ in range(num_service)]
+        in_sys_rqs = [[] for _ in range(num_service)]
+        done_rqs = [[] for _ in range(num_service)]
+        rq_delays = [[] for _ in range(num_service)]
+        container_states = [[] for _ in range(num_service)]
 
-    for i, block in enumerate(timestep_blocks, start=1):
-        container_state_match = re.search(r"Containers state after action:\s*\[\s*((?:\[\s*[\d\s]+]\s*)+)\]", block)
-        container_state = [list(map(int, re.findall(r'\d+', row))) for row in container_state_match.group(1).split(']\n')]
+        rewards = []
+        energy_consumptions = []
+        s = 0
+        for step in ep:
+            rewards.append(step["step_reward"])
+            energy_consumptions.append(step["energy_consumption"])
+            for service in range(num_service):
+                new_rqs[service].append(step["new_requests"][service])
+                in_queue_rqs[service].append(step["queue_requests"][service])
+                in_sys_rqs[service].append(step["system_requests"][service])
+                done_rqs[service].append(step["done_requests"][service])
+                rq_delays[service].extend(step["request_delay"][service])
+                container_states[service].append(step["containers_state_after_action"][service])
+            s += 1
+                
         
-        cu_accepted_rq_match = re.search(r"Cumulative number accpeted request\s*:\s*\[\s*([\d\s]+)\]", block)
-        cu_accepted_rq = np.array(list(map(int, cu_accepted_rq_match.group(1).split()))) if cu_accepted_rq_match else None
-        
-        new_rq_match = re.search(r'Number new request\s*:\s*\[\s*([\d\s]+)\]', block)
-        new_rq = np.array(list(map(int, new_rq_match.group(1).split()))) if new_rq_match else None
-        
-        in_queue_rq_match = re.search(r'Number in queue request\s*:\s*\[\s*([\d\s]+)\]', block)
-        in_queue_rq = np.array(list(map(int, in_queue_rq_match.group(1).split()))) if in_queue_rq_match else None
-        
-        in_sys_rq_match = re.search(r'Number in system request\s*:\s*\[\s*([\d\s]+)\]', block)
-        in_sys_rq = np.array(list(map(int, in_sys_rq_match.group(1).split()))) if in_sys_rq_match else None
-        
-        done_rq_match = re.search(r'Number done system request\s*:\s*\[\s*([\d\s]+)\]', block)
-        done_rq = np.array(list(map(int, done_rq_match.group(1).split()))) if done_rq_match else None
-        
-        cu_rq_delay_match = re.search(r"Cumulative request delay\s*:\s*\[\s*([\d\s]+)\]", block)
-        cu_rq_delay = np.array(list(map(int, cu_rq_delay_match.group(1).split()))) if cu_rq_delay_match else None
-        
-        rewards_match = re.search(r'Rewards\s*:\s*([-\d.]+)', block)
-        reward = float(rewards_match.group(1)) if rewards_match else None
-        
-        energy_match = re.search(r"Energy consumption over timestep\s*:\s*([\d\.]+)J", block)
-        energy_consumption = float(energy_match.group(1)) if energy_match else None
-        
-        new_rqs.append(new_rq)
-        in_queue_rqs.append(in_queue_rq)
-        in_sys_rqs.append(in_sys_rq)
-        done_rqs.append(done_rq)
-        rewards.append(reward)
-        energy_consumptions.append(energy_consumption)
-        cu_rq_delays.append(cu_rq_delay)
-        container_states.append(container_state)
-        cu_accepted_rqs.append(cu_accepted_rq)
-
-    acceptance_ratio = [
-        (in_sys_rqs[i] + done_rqs[i] - (in_sys_rqs[i-1] if i > 0 else 0)) /
-        ((in_queue_rqs[i-1] if i > 0 else 0) + new_rqs[i])
-        for i in range(len(new_rqs))
-    ]
-    
-    energy_consumptions = np.array(energy_consumptions)
-    acceptance_ratio = np.array(acceptance_ratio)
-    rewards = np.array(rewards)
-    cu_rq_delays = np.array(cu_rq_delays)
-    container_states = np.array(container_states)
-    cu_accepted_rqs = np.array(cu_accepted_rqs)
-    num_step = len(energy_consumptions) // training_num
-    
-    avg_energy_consumptions = [
-        np.mean(energy_consumptions[i::num_step]) 
-        for i in range(num_step)
-    ]
-
-    avg_acceptance_ratio = [
-        np.mean(acceptance_ratio[i::num_step],axis=0) 
-        for i in range(num_step)
-    ]
-    avg_acceptance_ratio = np.array(avg_acceptance_ratio)
-    
-    cu_rq_delays = np.array([np.mean(cu_rq_delays[(num_step-1)::num_step],axis=0)])
-    cu_accepted_rqs = np.array([np.mean(cu_accepted_rqs[(num_step-1)::num_step],axis=0)])
-    avg_cu_rq_delay = np.divide(cu_rq_delays, cu_accepted_rqs)
-    
-    avg_container_state = np.array([
-        np.mean(container_states[i::num_step],axis=0) 
-        for i in range(num_step)
-    ])
-    avg_container_state = np.split(avg_container_state,service_num,axis=1)
-    avg_container_state = [arr.squeeze(axis=1) for arr in avg_container_state]
-  
-    avg_rewards = [
-        np.mean(rewards[i::num_step]) 
-        for i in range(num_step)
-    ]
-    
-    timesteps = np.arange(len(avg_energy_consumptions)) * timestep_value
-    
-    # Plot acceptance ratio
-    plt.figure()
-    for i in range(service_num):
-        plt.plot(timesteps, avg_acceptance_ratio[:, i], label=f'Service {i+1}')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Acceptance Ratio')
-    plt.title('Avg Acceptance Ratio Over {} Episodes'.format(training_num))
-    plt.grid(True)
-    plt.legend()
-    plt.savefig(os.path.join(log_folder, 'acceptance_ratio.png'))  
-    
-    # Plot avg request delay 
-    plt.figure()
-    plt.bar(np.arange(1,service_num+1),avg_cu_rq_delay[0, :])
-    plt.xlabel('Service')
-    plt.ylabel('Delay time per accepted request')
-    plt.title('Avg Request Delay Time Over {} Episodes'.format(training_num))
-    plt.xticks(np.arange(1,service_num+1))
-    plt.savefig(os.path.join(log_folder, 'delay.png'))  
-
-    # Plot reward
-    plt.figure()
-    plt.plot(timesteps, avg_rewards, label='Avg Rewards Over {} Episodes'.format(training_num), color='red')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Rewards')
-    plt.title('Avg Rewards Over {} Episodes'.format(training_num))
-    plt.grid(True)
-    plt.savefig(os.path.join(log_folder, 'rewards_plot.png'))  
-
-    # Plot Energy consumption
-    plt.figure()
-    plt.plot(timesteps, avg_energy_consumptions, label='Avg Energy Consumption Over {} Episodes'.format(training_num), color='orange')
-    plt.xlabel('Time (seconds)')
-    plt.ylabel('Energy Consumption (J)')
-    plt.title('Avg Energy Consumption Over {} Episodes'.format(training_num))
-    plt.grid(True)
-    plt.savefig(os.path.join(log_folder, 'energy_consumption_plot.png'))  
-    
-    # Plot container state
-    for service in range(service_num):
+        timesteps = np.arange(s) * timestep_value
+        # Plot acceptance ratio
         plt.figure()
-        plt.stackplot(timesteps, avg_container_state[service].T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
-        plt.xlabel('Time')
-        plt.ylabel('Number container')
-        plt.title('Ratio between container states of service {}'.format(service))
+        for i in range(num_service):
+            acpt_ratios =calc_accept_ratio(in_sys_rqs[service], done_rqs[service], in_queue_rqs[service], new_rqs[service])
+            plt.plot(timesteps, acpt_ratios, label=f'Service {i+1}')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Acceptance Ratio')
+        plt.title('Avg Acceptance Ratio')
+        plt.grid(True)
         plt.legend()
-        plt.savefig(os.path.join(log_folder, 'state_service_{}.png'.format(service))) 
+        plt.savefig(os.path.join(log_folder, f'acpt_ratio_episode_{e}.png'))  
+        
+        # Plot bar request delay
+        plt.figure()
+        for i in range(num_service): 
+            min_value = min(rq_delays[i])
+            max_value = max(rq_delays[i])
+            mean_value = np.mean(rq_delays[i])
+
+            values = [mean_value, min_value, max_value]
+            labels = [f'Mean service {e}', f'Min service {e}', f'Max service{e}']
+
+            bars = plt.bar(labels, values)
+
+            for bar in bars:
+                yval = bar.get_height()  
+                plt.text(bar.get_x() + bar.get_width() / 2, yval, f"{yval:.3f}", ha='center', va='bottom') 
+        plt.title(f'Delay time of accepted request')
+        plt.ylabel('Delay time (s)')
+        plt.savefig(os.path.join(log_folder, f'bar_delay_episode_{e}.png'))  
+        
+        # Plot boxplot request delay
+        plt.figure()
+        bars = plt.boxplot(rq_delays)
+
+        plt.title(f'Delay time of accepted request')
+        plt.ylabel('Delay time (s)')
+        plt.xlabel('Service')
+        plt.savefig(os.path.join(log_folder, f'boxplot_delay_episode_{e}.png')) 
+        
+        # # Plot line request delay
+        # for i in range(num_service):
+        #     plt.figure()
+        #     plt.plot(rq_delays[i], label=f'Service {i+1}')
+
+        # plt.title(f'Delay time accepted request')
+        # plt.ylabel('Delay time (s)')
+        # plt.xlabel('')
+        # plt.savefig(os.path.join(log_folder, f'line_delay_{e}.png')) 
+
+        # Plot reward
+        plt.figure()
+        plt.plot(timesteps, rewards, label='Avg Rewards', color='red')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Rewards')
+        plt.title('Reward over step')
+        plt.grid(True)
+        plt.savefig(os.path.join(log_folder, f'reward_episode_{e}.png'))  
+
+        # Plot Energy consumption
+        plt.figure()
+        plt.plot(timesteps, energy_consumptions, label='Energy Consumption', color='orange')
+        plt.xlabel('Time (s)')
+        plt.ylabel('Energy Consumption (J)')
+        plt.title('Cummulative Energy Consumption')
+        plt.grid(True)
+        plt.savefig(os.path.join(log_folder, f'energy_cons_episode_{e}.png'))  
+        
+        num_ctn_states = len(Container_States.State_Name)
+        
+        # Plot area container state
+        for i in range(num_service):
+            plt.figure()
+            plt.stackplot(timesteps, np.array(container_states[i]).T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
+            plt.xlabel('Time (s)')
+            plt.ylabel('Number container')
+            plt.title('Ratio between container states of service {}'.format(service))
+            plt.legend()
+            plt.savefig(os.path.join(log_folder, 'cont_state_service_{}_episode_{}.png'.format(service,e))) 
+        
+        # Plot areline container state
+        for i in range(num_service):
+            plt.figure()
+            for k in range(num_ctn_states):
+                plt.plot(timesteps, np.array(container_states[i]).T[k], label=f'{Container_States.State_Name[k]}')
+            plt.xlabel('Time (s)')
+            plt.ylabel('Number container')
+            plt.title('Ratio between container states of service {}'.format(service))
+            plt.legend()
+            plt.savefig(os.path.join(log_folder, 'line_cont_state_service_{}_episode_{}.png'.format(service,e))) 
+        
+        e += 1
+    
