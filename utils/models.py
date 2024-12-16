@@ -51,21 +51,22 @@ class GenericNetwork(nn.Module):
         x = self.fc3(x)
         return x
 
-    def save_checkpoint(self):
+    def save_checkpoint(self, file=None):
         """
         Used to save model's weights
         :return:
         """
-        print('... saving checkpoint ...')
-        torch.save(self.state_dict(), self.checkpoint_file)
-
-    def load_checkpoint(self):
+        if file is None:
+            file = self.checkpoint_file
+        torch.save(self.state_dict(), file)
+    def load_checkpoint(self, file=None):
         """
         Used to load model's weights
         :return:
         """
-        print('... loading checkpoint ...')
-        self.load_state_dict(torch.load(self.checkpoint_file))
+        if file is None:
+            file = self.checkpoint_file
+        self.load_state_dict(torch.load(file))
 
 
 class ActorCriticNetwork(nn.Module):

@@ -3,11 +3,10 @@ import gymnasium as gym
 import rlss_env.request as rq
 import itertools
 import math
-import pandas as pd
 
 from rlss_env.request import Request_States
 import rlss_env.profiling as profiling
-from rlss_env.profiling import Resource_Type, REQ_RES_USAGE
+from rlss_env.profiling import Resource_Type
 from rlss_env.container import Container_States
 
 def compute_formula(num_box, num_ball):
@@ -17,23 +16,11 @@ def compute_formula(num_box, num_ball):
 
 class ServerlessEnv(gym.Env):
     metadata = {}
-
-    def __init__(self, env_config={"render_mode":None, 
-                                   "num_service": 1,
-                                   "timestep": 120,
-                                   "num_container": [100],
-                                   "container_lifetime": 3600*8,
-                                   "rq_timeout": [20],
-                                   "average_requests": 40/60,
-                                   "max_rq_active_time": {"type": "random", "value": [60]},
-                                   "energy_price": 10e-8, 
-                                   "ram_profit": 10e-6,
-                                   "cpu_profit": 10e-6,
-                                   "alpha": 0.1*0.05,
-                                   "beta": 0.1*0.05,
-                                   "gamma": 0.1*0.9,
-                                   "custom_profiling": False,
-                                   "profiling_path": None}):
+    def __init__(self, traffic_generator, render_mode=None, num_service=1, timestep=120, 
+                 num_container=[100], container_lifetime=3600*8, energy_price=8e-6, 
+                 ram_profit=10e-6, cpu_profit=10e-6, delay_coff=1, aban_coff=1, energy_coff=1, 
+                 custom_profiling=False, profiling_path=None, queue_size=5000):
+        # Initialize other attributes and perform setup as needed
         super(ServerlessEnv, self).__init__() 
          
         self.TRANS = np.array([np.array([0, 0, 0, 0, 0]),    # No change
@@ -54,32 +41,32 @@ class ServerlessEnv(gym.Env):
         
         self.cont_res_usage = None
         self.trans_cost = None
-        self.get_resource_profiling(env_config)
+        self.get_resource_profiling(profiling_path, custom_profiling)
         
         self.current_time = 0  # Start at time 0
-        self.timestep = 120 
+        self.timestep = timestep
         
-        self.num_service = env_config["num_service"]  # The number of services
+        self.num_service = num_service  # The number of services
         self.num_ctn_states = len(Container_States.State_Name)
         self.num_trans = self.TRANS.shape[0] - 1
         
-        self.num_container = np.array(env_config["num_container"])
-        self.container_lifetime = env_config["container_lifetime"]  # Set lifetime of a container  
+        self.num_container = np.array(num_container)
+        self.container_lifetime = container_lifetime  # Set lifetime of a container  
         
         self.num_rq_state = len(Container_States.State_Name)  
-        self.rq_timeout = env_config["rq_timeout"] 
-        self.max_rq_active_time = env_config["max_rq_active_time"]  # "random" or "static"
-        self.average_requests = env_config["average_requests"]  # Set the average incoming requests per second 
-        self.max_num_request = int(self.average_requests*self.timestep*2)  # Set the limit number of requests that can exist in the system 
+    
+    
+        self.traffic_generator = traffic_generator
+        self.queue_size = queue_size
         
-        self.num_resources = len([attr for attr in vars(Resource_Type) if not attr.startswith('__')]) - 1    # The number of resource parameters (RAM, CPU, Power)
+        self.num_resources = len([attr for attr in vars(Resource_Type) if not attr.startswith('__')]) - 1   
         self.limited_resource = [1000 * 1024, 1000 * 100]  # Set limited amount of [RAM, CPU] of system
-        self.energy_price = env_config["energy_price"] # unit cent/Jun/s 
-        self.ram_profit = env_config["ram_profit"] # unit cent/Gb/s
-        self.cpu_profit = env_config["cpu_profit"] # unit cent/vcpu/s
-        self.alpha = env_config["alpha"]
-        self.beta = env_config["beta"]
-        self.gamma = env_config["gamma"]
+        self.energy_price = energy_price # unit cent/Jun/s 
+        self.ram_profit = ram_profit # unit cent/Gb/s
+        self.cpu_profit = cpu_profit # unit cent/vcpu/s
+        self.delay_coff = delay_coff
+        self.aban_coff = aban_coff
+        self.engery_coff = energy_coff
         
         '''
         Initialize the state and other variables
@@ -96,7 +83,7 @@ class ServerlessEnv(gym.Env):
         self.per_second_resource_usage = np.zeros(self.num_resources,dtype=np.float64)
         self.cum_resource_usage = np.zeros(self.num_resources,dtype=np.float64)
         
-
+        # TODO: change queue have a size
         self._in_queue_requests = [[] for _ in range(self.num_service)] 
         self._in_system_requests = [[] for _ in range(self.num_service)] 
         self._done_requests = [[] for _ in range(self.num_service)]
@@ -119,11 +106,10 @@ class ServerlessEnv(gym.Env):
         self._negative_action_matrix = self._action_matrix * (self._action_matrix < 0)
         self.formatted_action = np.zeros((2,4),dtype=np.int32)
         
-        # TODO: try random initial state of container matrix 
         # Create matrix based on self.num_container
         self._container_matrix_tmp = np.hstack((
-            self.num_container[:, np.newaxis],  # Convert array to column matrix
-            np.zeros((self.num_container.size, self.num_ctn_states-1), dtype=np.int16)  # Matrix of zeros with size 4x3
+            self.num_container[:, np.newaxis],  
+            np.zeros((self.num_container.size, self.num_ctn_states-1), dtype=np.int16)
         )).astype(np.int16)
         # self._container_matrix_tmp = self._create_random_container_matrix()
         self._container_matrix = self._container_matrix_tmp.copy()
@@ -148,8 +134,8 @@ class ServerlessEnv(gym.Env):
         self.action_mask = np.zeros((self.action_size),dtype=np.int8)
         self._cal_action_mask()
 
-        assert env_config["render_mode"] is None or env_config["render_mode"] in self.metadata["render_modes"]
-        self.render_mode = env_config["render_mode"]
+        assert render_mode is None or render_mode in self.metadata["render_modes"]
+        self.render_mode = render_mode
 
      
     # Create action space
@@ -179,7 +165,7 @@ class ServerlessEnv(gym.Env):
                 high_matrix[service][container_state] = 2*self.num_container[service]
             
             # high_matrix[service][Request_States.Done+self.num_ctn_states] = self.max_num_request 
-            high_matrix[service][Request_States.In_Queue+self.num_ctn_states] = self.max_num_request 
+            high_matrix[service][Request_States.In_Queue+self.num_ctn_states] = self.queue_size 
             # high_matrix[service][Request_States.In_System+self.num_ctn_states] = self.max_num_request 
             # high_matrix[service][Request_States.Time_Out+self.num_ctn_states] = self.max_num_request 
             
@@ -191,7 +177,7 @@ class ServerlessEnv(gym.Env):
         ret = 1
         for service in range(self.num_service):
             ret *= compute_formula(self.num_ctn_states,int(self.num_container[service])) 
-        ret *= compute_formula(self.num_rq_state,int(2*self.max_num_request))
+        ret *= compute_formula(self.num_rq_state,int(2*self.queue_size))
         return ret
 
     def _cal_action_mask(self):
@@ -227,9 +213,8 @@ class ServerlessEnv(gym.Env):
         return ret
     
 
-    def get_resource_profiling(self, env_config):
-        profiling_path = env_config["profiling_path"]
-        if  env_config["custom_profiling"] is False:
+    def get_resource_profiling(self, profiling_path, custom_profiling):
+        if  custom_profiling is False:
             self.cont_res_usage = profiling.generate_container_resource_usage()
             self.trans_cost = profiling.generate_trans_cost()
             if profiling_path:
@@ -256,8 +241,7 @@ class ServerlessEnv(gym.Env):
 
 
     def _get_reward(self):
-
-        self.temp_reward = self.profit - (self.alpha*self.delay_penalty + self.beta*self.abandone_penalty + self.gamma*self.energy_cost)
+        self.temp_reward = 2 + self.profit - (self.delay_coff*self.delay_penalty + self.aban_coff*self.abandone_penalty + self.engery_coff*self.energy_cost)
         return self.temp_reward
     
     def reset(self, seed=42, options=None):
@@ -304,12 +288,8 @@ class ServerlessEnv(gym.Env):
      
            
     def _receive_new_requests(self):
-        num_new_rq = rq.generate_requests(self._in_queue_requests,
-                                           size=self.num_service,
-                                           current_time=self.current_time, 
-                                           avg_requests_per_second=self.average_requests,
-                                           timeout=self.rq_timeout,
-                                           max_rq_active_time=self.max_rq_active_time)
+        num_new_rq = self.traffic_generator.generate_requests(self._in_queue_requests,
+                                                              current_time=self.current_time)
         self.num_new_rq += num_new_rq
             
     def _set_truncated(self):
@@ -373,6 +353,10 @@ class ServerlessEnv(gym.Env):
                         rq.set_out_system_time(self.current_time)
                         self._timeout_requests[service].append(rq)
                         self._in_queue_requests[service].remove(rq)
+                        
+                        # Abandon penalty is applied only once at the time the request times out and is rejected by the system
+                        self.abandone_penalty += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*rq.active_time
+                        self.abandone_penalty += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*rq.active_time
                     else:
                         # If there are available resources, push the request into the system
                         if self._container_matrix[service][Container_States.Warm_CPU] > 0:
@@ -386,15 +370,15 @@ class ServerlessEnv(gym.Env):
                             
                             # Delay penalty is applied only once at the time the request is accepted by the system
                             delay_time = rq.in_system_time - rq.in_queue_time
-                            self.delay_penalty += REQ_RES_USAGE[service][Resource_Type.RAM]*self.ram_profit*delay_time
-                            self.delay_penalty += REQ_RES_USAGE[service][Resource_Type.CPU]*self.cpu_profit*delay_time
+                            self.delay_penalty += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*delay_time
+                            self.delay_penalty += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*delay_time
                             
                             self.rq_delay[service].append(delay_time)
 
                 # Handle requests in system
                 for rq in self._in_system_requests[service][:]:
                     # Resource consumption by request
-                    self.per_second_resource_usage += REQ_RES_USAGE[service]
+                    # self.per_second_resource_usage += REQ_RES_USAGE[service]
                     # Release requests that have been completed
                     if rq.active_time == np.ceil(self.current_time - rq.in_system_time):
                         rq.set_state(Request_States.Done)
@@ -403,15 +387,10 @@ class ServerlessEnv(gym.Env):
                         self._in_system_requests[service].remove(rq)
                         self._container_matrix[service][Container_States.Active] -= 1
                         self._container_matrix[service][Container_States.Warm_CPU] += 1
-                        
-                        # Abandon penalty is applied only once at the time the request times out and is rejected by the system
-                        in_queue_time = rq.out_system_time - rq.in_queue_time
-                        self.abandone_penalty += REQ_RES_USAGE[service][Resource_Type.RAM]*self.ram_profit*in_queue_time
-                        self.abandone_penalty += REQ_RES_USAGE[service][Resource_Type.CPU]*self.ram_profit*in_queue_time
                 
                 # Profit of requests accepted into the system in 1 second
-                self.profit += REQ_RES_USAGE[service][Resource_Type.RAM]*self.ram_profit*self._container_matrix[service][Container_States.Active]
-                self.profit += REQ_RES_USAGE[service][Resource_Type.CPU]*self.cpu_profit*self._container_matrix[service][Container_States.Active]
+                self.profit += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*self._container_matrix[service][Container_States.Active]
+                self.profit += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*self._container_matrix[service][Container_States.Active]
             
             self.energy_cost += self.per_second_resource_usage[Resource_Type.Power]*self.energy_price 
             self.cum_resource_usage += self.per_second_resource_usage
@@ -501,9 +480,9 @@ class ServerlessEnv(gym.Env):
             "request_delay": self.rq_delay,
             "step_reward": self.temp_reward,
             "profit": self.profit,
-            "abandone_penalty value": self.abandone_penalty,
-            "delay_penalty value": self.delay_penalty,
-            "energy_cost value": self.energy_cost,
+            "abandone_penalty value": self.aban_coff*self.abandone_penalty,
+            "delay_penalty value": self.delay_coff*self.delay_penalty,
+            "energy_cost value": self.engery_coff*self.energy_cost,
             "energy_consumption": self.cum_resource_usage[Resource_Type.Power],
             "ram_consumption": self.cum_resource_usage[Resource_Type.RAM],
             "cpu_consumption": self.cum_resource_usage[Resource_Type.CPU],
@@ -511,7 +490,6 @@ class ServerlessEnv(gym.Env):
             "per_second_ram_usage": self.per_second_resource_usage[Resource_Type.RAM],
             "per_second_cpu_usage": self.per_second_resource_usage[Resource_Type.CPU]
         } 
-
         return log_data
             
     def action_to_number(self, action_matrix):
@@ -544,27 +522,3 @@ class ServerlessEnv(gym.Env):
             multiplier //= (self.num_container[service-1]*self.num_trans + 1)
         
         return result
-
-
-if __name__ == "__main__":
-    # Create the serverless environment
-    env = ServerlessEnv()
-    print(env._container_matrix)
-    # Reset the environment to the initial state
-    observation = env.reset()
-    # Perform random actions
-    i = 0
-    while (i<10000):
-        # env._cal_action_mask()
-        action = env.action_space.sample(mask=env.action_mask)  # Random action
-        observation, reward, terminated, truncated = env.step(action)
-        env.render()
-        i += 1
-        if truncated:
-            print("error")
-            break
-        if (terminated): 
-            print("--------------------------------cff--------")
-            break
-            env.reset()
-        else: continue

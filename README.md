@@ -23,7 +23,7 @@ your_main_folder/
         ├── hyperparameters.json
         ├── profiling.npz
         └── train/
-            ├── live_average_rewards_DQN.png
+            ├── live_training.png
             └── log.pkl
         └── test/
 ```

@@ -1,20 +1,19 @@
 import numpy as np
-from rlss_env.rlss_envs import ServerlessEnv 
-from utils.dqn_agent import Agent as dqn
-import matplotlib.pyplot as plt
 import argparse
 import torch
-import pandas as pd
 import os, json
 from datetime import datetime
-import pickle
+import matplotlib.pyplot as plt
 
+from rlss_env.rlss_envs import ServerlessEnv 
+from utils.dqn_agent import Agent as dqn
+from traffic_generator.request_generator import PoissonGenerator, RealTraceGenerator
 import utils.log_plot as lp 
 
 now = datetime.now()
 
 # testing the trained model
-def test(args, folder_base, env_config, drl_hyper_params):
+def test(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     folder_name = os.path.join(folder_base, 'test')
     os.makedirs(folder_name, exist_ok=True)
     log_path = os.path.join(folder_name, 'log.json')
@@ -23,8 +22,22 @@ def test(args, folder_base, env_config, drl_hyper_params):
         
     env_config["custom_profiling"] = True
     env_config["profiling_path"] = os.path.join(folder_base,"profiling.npz")
+
+    env = ServerlessEnv(traffic_generator=traffic_gen,
+                        render_mode=env_config["render_mode"],
+                        num_service=env_config["num_service"],
+                        timestep=env_config["timestep"],
+                        num_container=env_config["num_container"],
+                        container_lifetime=env_config["container_lifetime"],
+                        energy_price=env_config["energy_price"],
+                        ram_profit=env_config["ram_profit"],
+                        cpu_profit=env_config["cpu_profit"],
+                        delay_coff=env_config["delay_coff"],
+                        aban_coff=env_config["aban_coff"],
+                        energy_coff=env_config["energy_coff"],
+                        profiling_path=env_config["profiling_path"],
+                        custom_profiling=env_config["custom_profiling"])
     
-    env = ServerlessEnv(env_config=env_config)
     action_size = env.action_size
     state_dim = env.state_space.shape[0]
     
@@ -76,7 +89,7 @@ def test(args, folder_base, env_config, drl_hyper_params):
 
 
 # Training the model            
-def train(args, folder_base, env_config, drl_hyper_params):
+def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     folder_name = os.path.join(folder_base, 'train')
     os.makedirs(folder_name, exist_ok=True)
     log_path = os.path.join(folder_name, 'log.pkl')
@@ -84,7 +97,22 @@ def train(args, folder_base, env_config, drl_hyper_params):
     
     env_config["custom_profiling"] = False
     env_config["profiling_path"] = os.path.join(folder_base,"profiling.npz")
-    env = ServerlessEnv(env_config=env_config)
+        
+    env = ServerlessEnv(traffic_generator=traffic_gen,
+                        render_mode=env_config["render_mode"],
+                        num_service=env_config["num_service"],
+                        timestep=env_config["timestep"],
+                        num_container=env_config["num_container"],
+                        container_lifetime=env_config["container_lifetime"],
+                        energy_price=env_config["energy_price"],
+                        ram_profit=env_config["ram_profit"],
+                        cpu_profit=env_config["cpu_profit"],
+                        delay_coff=env_config["delay_coff"],
+                        aban_coff=env_config["aban_coff"],
+                        energy_coff=env_config["energy_coff"],
+                        profiling_path=env_config["profiling_path"],
+                        custom_profiling=env_config["custom_profiling"])
+    
     action_size = env.action_size
     state_dim = env.state_space.shape[0]
     
@@ -108,6 +136,8 @@ def train(args, folder_base, env_config, drl_hyper_params):
     
     eps = drl_hyper_params["episodes"]
     
+    best_cum = -np.inf
+    
     for e in range(eps):
         state = env.reset()
         state = np.reshape(state, [state_dim])
@@ -119,7 +149,7 @@ def train(args, folder_base, env_config, drl_hyper_params):
             next_state, reward, done, _ = env.step(action)
             tab[e * env.current_time + env.current_time] = {"action": action, "reward": reward, "next_state": next_state}
             next_state = np.reshape(next_state, [state_dim])
-            agent.store_transition(state, action, reward, next_state, done)
+            agent.store_transition(state, action, reward, next_state, False)
             state = next_state
             agent.learn()
             rewards.append(reward)
@@ -130,16 +160,22 @@ def train(args, folder_base, env_config, drl_hyper_params):
             log_data.append(step_info)
             
         lp.append_to_pickle(log_data,log_path)   
-        # eps = max(eps_end, eps_decay*eps)
+        drl_hyper_params["epsilon"] = max(0.1, 0.999*drl_hyper_params["epsilon"])
+            
         if e % drl_hyper_params["batch_update"] == 0:
             agent.update_target_network()
-            agent.save_models()
             
         cumulative_rewards.append(cum_reward)
         if e > drl_hyper_params["max_env_steps"]:
             avg = np.mean(cumulative_rewards[-drl_hyper_params["max_env_steps"]:])
         else:
             avg = np.mean(cumulative_rewards)
+            
+        if best_cum <= cum_reward:
+            best_cum = cum_reward
+            print(f"Best cum reward: {cum_reward} at episode: {e}")
+            agent.save_models()
+            
         avg_reward_list.append(avg)
         plt.figure(2)
         plt.clf()
@@ -157,19 +193,20 @@ def train(args, folder_base, env_config, drl_hyper_params):
         
         plt.savefig(os.path.join(folder_name,'live_traning.png'))
         plt.close()
-        agent.save_models()
         
     # Plotting the reward/avg_reward
     plt.plot((np.arange(len(avg_reward_list)) + 1), avg_reward_list)
     plt.xlabel('Episodes')
     plt.ylabel('Average Reward')
     plt.title('Average Reward vs Episodes')
+    plt.grid(True)
     plt.savefig(os.path.join(folder_name, 'average_rewards_{}.png'.format(args['model'])))
     plt.close()
 
     plt.plot(cumulative_rewards)
     plt.plot(avg_reward_list)
     plt.legend(["Reward", "{}-episode average".format(drl_hyper_params["max_env_steps"])])
+    plt.grid(True)
     plt.title("Reward history")
     plt.savefig(os.path.join(folder_name, 'Live_average_rewards_{}.png'.format(args['model'])))
     plt.close()
@@ -188,39 +225,6 @@ def train(args, folder_base, env_config, drl_hyper_params):
         w.write(str(avg_reward_list))    
 
 def main(args):   
-    # Environment variable
-    # num_service = 1
-    # timestep = 120
-    # num_container = [400]
-    # container_lifetime = 3600*8
-    # rq_timeout = [20]
-    # average_requests = 8/3
-    # max_rq_active_time = {"type": "random", "value": [60]}
-    # energy_price = 10e-8 
-    # ram_profit = 10e-5
-    # cpu_profit = 10e-5
-    # alpharw = 0.05
-    # betarw = 0.05
-    # gammarw = 0.9 
-
-
-    # # DQN_agent
-    # episodes = 4000                        # Total episodes for the training
-    # batch_size = 32                        # Total used memory in memory replay mode
-    # max_env_steps = 50                    # Max steps per episode
-    # batch_update = 20
-    
-    # replay_buffer_size=50000
-    # hidden_size=64
-    # gamma=0.15 # Testing in range [0.1,0.25, step=0.05]
-    # learning_rate=5e-4
-    # eps = 0.05
-    
-    # # Exploration initiation
-    # eps = 1.
-    # eps_end = 0.01
-    # eps_decay = 0.995
-    
     folder_base = f"result/result_{now.month}_{now.day}_{now.hour}_{now.minute}_{now.second}"
     hyper_params = ''
     if args['folder'] is not None:
@@ -232,46 +236,30 @@ def main(args):
         if not args['hyperparameters']: 
             print("Not found hyperparameter file")
             return 
-            # env_config = {"render_mode":None, 
-            #             "num_service": num_service,
-            #             "timestep": timestep,
-            #             "num_container": num_container,
-            #             "container_lifetime": container_lifetime,
-            #             "rq_timeout": rq_timeout,
-            #             "average_requests": average_requests,
-            #             "max_rq_active_time": max_rq_active_time,
-            #             "energy_price": energy_price, 
-            #             "ram_profit": ram_profit,
-            #             "cpu_profit": cpu_profit,
-            #             "alpha": alpharw,
-            #             "beta": betarw,
-            #             "gamma": gammarw}
-            
-            # drl_hyper_params = {"episodes": episodes,                       
-            #                     "batch_size" :batch_size,                        
-            #                     "max_env_steps": max_env_steps,                    
-            #                     "batch_update" : batch_update,
-            #                     "replay_buffer_size": replay_buffer_size,
-            #                     "hidden_size": hidden_size,
-            #                     "gamma": gamma,
-            #                     "epsilon": eps,
-            #                     "learning_rate":learning_rate}
-            
-            # with open(os.path.join(folder_base,"hyperparameters.json"), 'w') as file:
-            #     json.dump([env_config, drl_hyper_params], file, indent=4)
         else: 
             hyper_params = args['hyperparameters']
      
     with open(hyper_params,'r') as hp:
         env_config, drl_hyper_params = json.load(hp)   
         
+    if env_config["traffic_generator"] == "simulated":
+        traffic_gen = PoissonGenerator(size=env_config["num_service"],
+                                    avg_requests_per_second=env_config["average_requests"],
+                                    timeout=env_config["rq_timeout"],
+                                    max_rq_active_time=env_config["max_rq_active_time"])
+    elif env_config["traffic_generator"] == "real":
+        traffic_gen = RealTraceGenerator(active_time_stats_file=env_config["active_time_stats_file"],
+                                         arrival_request_stats_file=env_config["arrival_request_stats_file"],
+                                         time_out=env_config["rq_timeout"],
+                                         num_services=env_config["num_service"])
+        
     if args['observe'] is not None:
-        test(args, folder_base, env_config, drl_hyper_params)
+        test(args, folder_base, env_config, traffic_gen, drl_hyper_params)
     else:
         with open(os.path.join(folder_base,"hyperparameters.json"), 'w') as file:
             json.dump([env_config, drl_hyper_params], file, indent=4)
-        train(args, folder_base, env_config, drl_hyper_params)
-        test(args, folder_base, env_config, drl_hyper_params)       
+        train(args, folder_base, env_config, traffic_gen, drl_hyper_params)
+        test(args, folder_base, env_config, traffic_gen, drl_hyper_params)       
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Parsing the type of DRL/RL to be tested')

@@ -85,25 +85,28 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         plt.grid(True)
         plt.legend()
         plt.savefig(os.path.join(log_folder, f'acpt_ratio_episode_{e}.png'))  
+        plt.close()
         
         # Plot bar request delay
         plt.figure()
         for i in range(num_service): 
-            min_value = min(rq_delays[i])
-            max_value = max(rq_delays[i])
-            mean_value = np.mean(rq_delays[i])
+            if rq_delays[i]:
+                min_value = min(rq_delays[i])
+                max_value = max(rq_delays[i])
+                mean_value = np.mean(rq_delays[i])
 
-            values = [mean_value, min_value, max_value]
-            labels = [f'Mean service {e}', f'Min service {e}', f'Max service{e}']
+                values = [mean_value, min_value, max_value]
+                labels = [f'Mean service {e}', f'Min service {e}', f'Max service{e}']
 
-            bars = plt.bar(labels, values)
+                bars = plt.bar(labels, values)
 
-            for bar in bars:
-                yval = bar.get_height()  
-                plt.text(bar.get_x() + bar.get_width() / 2, yval, f"{yval:.3f}", ha='center', va='bottom') 
+                for bar in bars:
+                    yval = bar.get_height()  
+                    plt.text(bar.get_x() + bar.get_width() / 2, yval, f"{yval:.3f}", ha='center', va='bottom') 
         plt.title(f'Delay time of accepted request')
         plt.ylabel('Delay time (s)')
         plt.savefig(os.path.join(log_folder, f'bar_delay_episode_{e}.png'))  
+        plt.close()
         
         # Plot boxplot request delay
         plt.figure()
@@ -113,6 +116,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         plt.ylabel('Delay time (s)')
         plt.xlabel('Service')
         plt.savefig(os.path.join(log_folder, f'boxplot_delay_episode_{e}.png')) 
+        plt.close()
         
         # # Plot line request delay
         # for i in range(num_service):
@@ -132,6 +136,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         plt.title('Reward over step')
         plt.grid(True)
         plt.savefig(os.path.join(log_folder, f'reward_episode_{e}.png'))  
+        plt.close()
 
         # Plot Energy consumption
         plt.figure()
@@ -141,6 +146,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         plt.title('Cummulative Energy Consumption')
         plt.grid(True)
         plt.savefig(os.path.join(log_folder, f'energy_cons_episode_{e}.png'))  
+        plt.close()
         
         num_ctn_states = len(Container_States.State_Name)
         
@@ -153,6 +159,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
             plt.title('Ratio between container states of service {}'.format(service))
             plt.legend()
             plt.savefig(os.path.join(log_folder, 'cont_state_service_{}_episode_{}.png'.format(service,e))) 
+            plt.close()
         
         # Plot areline container state
         for i in range(num_service):
@@ -164,6 +171,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
             plt.title('Ratio between container states of service {}'.format(service))
             plt.legend()
             plt.savefig(os.path.join(log_folder, 'line_cont_state_service_{}_episode_{}.png'.format(service,e))) 
+            plt.close()
         
         e += 1
     

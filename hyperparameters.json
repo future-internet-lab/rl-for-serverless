@@ -4,35 +4,38 @@
         "num_service": 1,
         "timestep": 120,
         "num_container": [
-            100
+            500
         ],
         "container_lifetime": 28800,
+        "traffic_generator": "real",
+        "active_time_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
+        "arrival_request_stats_file": "/home/mec/hai/RL-for-serverless/envs/request.csv",
         "rq_timeout": [
             20
         ],
-        "average_requests": 0.1,
+        "average_requests": 0.2,
         "max_rq_active_time": {
             "type": "random",
             "value": [
                 60
             ]
         },
-        "energy_price": 1e-07,
-        "ram_profit": 0.0001,
-        "cpu_profit": 0.0001,
-        "alpha": 0.05,
-        "beta": 0.05,
-        "gamma": 0.9
+        "energy_price": 8e-06,
+        "ram_profit": 1e-05,
+        "cpu_profit": 1e-05,
+        "delay_coff": 1,
+        "aban_coff": 1,
+        "energy_coff": 1
     },
     {
-        "episodes": 4000,
+        "episodes": 10000,
         "batch_size": 32,
         "max_env_steps": 50,
         "batch_update": 20,
         "replay_buffer_size": 50000,
         "hidden_size": 64,
-        "gamma": 0.2,
-        "epsilon": 0.05,
-        "learning_rate": 0.0005
+        "gamma": 0.99,
+        "epsilon": 1,
+        "learning_rate": 0.001
     }
 ]

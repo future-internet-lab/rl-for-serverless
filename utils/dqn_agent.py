@@ -127,6 +127,7 @@ class Agent:
         state = T.from_numpy(state).float()
         self.memory.push(state, action, reward, next_state, done)
 
+
     def save_models(self):
         """
         Used to save models
@@ -135,10 +136,10 @@ class Agent:
         self.policy_net.save_checkpoint()
         self.target_net.save_checkpoint()
 
+    
     def load_models(self):
         """
         Used to load models
         :return:
         """
         self.policy_net.load_checkpoint()
-        # self.target_net.load_checkpoint()
