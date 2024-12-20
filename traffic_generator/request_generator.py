@@ -68,7 +68,7 @@ class TrafficGenerator(ABC):
         pass
 
 class PoissonGenerator(TrafficGenerator):
-    def __init__(self, size=1, avg_requests_per_second=1, timeout=20, max_rq_active_time={"type": "random", "value": [60]}):
+    def __init__(self, size=1, avg_requests_per_second=1, timeout=[20], max_rq_active_time={"type": "random", "value": [60]}):
         self.name = "Poisson"
         self.num_services = size
         self.avg_requests_per_second = avg_requests_per_second
@@ -103,7 +103,7 @@ class PoissonGenerator(TrafficGenerator):
         return new_rqs
 
 class RealTraceGenerator(TrafficGenerator):
-    def __init__(self, active_time_stats_file, arrival_request_stats_file, time_out=4, num_services=1):
+    def __init__(self, active_time_stats_file, arrival_request_stats_file, time_out=[4], num_services=1):
         self.num_services = num_services
         self.timeout= time_out
         self.num_arrival_stats = []
@@ -118,7 +118,6 @@ class RealTraceGenerator(TrafficGenerator):
     def _get_active_time_stats(self, active_time_stats_file):
         if active_time_stats_file:
             data = pd.read_csv(active_time_stats_file)
-            print(data)
             for i in range(self.num_services):
                 
                 percentiles = {
@@ -131,11 +130,9 @@ class RealTraceGenerator(TrafficGenerator):
                     '100': data.iloc[i]['percentile_Average_100']
                 }
                 average = data.iloc[i]['Average']
-                print(average)
                 mu, sigma = estimate_dist(average, percentiles)
                 self.mu.append(mu)
                 self.sigma.append(sigma)
-                print(self.mu[i], self.sigma[i])
                 self.minimum.append(data.iloc[i]['Minimum'])
                 self.maximum.append(data.iloc[i]['Maximum'])
                 
@@ -145,7 +142,6 @@ class RealTraceGenerator(TrafficGenerator):
             for i in range(self.num_services):
                 self.num_arrival_stats.append(data.iloc[i].dropna().tolist())
                 self.num_arrival_stats[i] = [x / 60 for x in self.num_arrival_stats[i]]
-                print(self.num_arrival_stats[i])
     
     def determine_active_time(self, service_index):
         return truncated_lognormal_single_sample_fast(self.mu[service_index], 

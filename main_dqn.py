@@ -160,7 +160,7 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
             log_data.append(step_info)
             
         lp.append_to_pickle(log_data,log_path)   
-        drl_hyper_params["epsilon"] = max(0.1, 0.999*drl_hyper_params["epsilon"])
+        drl_hyper_params["epsilon"] = max(drl_hyper_params["eps_min"], drl_hyper_params["eps_decay"]*drl_hyper_params["epsilon"])
             
         if e % drl_hyper_params["batch_update"] == 0:
             agent.update_target_network()
