@@ -3,6 +3,7 @@ dqn_network_
 test.py
 result/
 live_average_rewards_DQN.png
+hyperparameters.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
