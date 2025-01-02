@@ -4,7 +4,7 @@
         "num_service": 1,
         "timestep": 120,
         "num_container": [
-            2000
+            500
         ],
         "container_lifetime": 28800,
         "traffic_generator": "real",
@@ -25,10 +25,11 @@
         "cpu_profit": 1e-05,
         "delay_coff": 1,
         "aban_coff": 1,
-        "energy_coff": 1
+        "energy_coff": 2,
+        "reward_add": 50
     },
     {
-        "episodes": 10000,
+        "episodes": 1000,
         "batch_size": 32,
         "max_env_steps": 50,
         "batch_update": 20,

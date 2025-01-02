@@ -36,8 +36,12 @@ def calc_accept_ratio(
         done = done_rqs[i]
         prev_in_sys = in_sys_rqs[i - 1] if i > 0 else 0
         prev_in_queue = in_queue_rqs[i - 1] if i > 0 else 0
-        new_requests = new_rqs[i]    
-        ratio = (in_sys + done - prev_in_sys) / (prev_in_queue + new_requests)
+        new_requests = new_rqs[i]
+        denominator = prev_in_queue + new_requests
+        if denominator == 0:
+            ratio = 0
+        else:
+            ratio = (in_sys + done - prev_in_sys) / denominator
         acceptance_ratio.append(ratio)
     
     return acceptance_ratio
@@ -174,4 +178,4 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
             plt.close()
         
         e += 1
-    
+

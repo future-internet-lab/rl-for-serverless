@@ -111,7 +111,8 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
                         aban_coff=env_config["aban_coff"],
                         energy_coff=env_config["energy_coff"],
                         profiling_path=env_config["profiling_path"],
-                        custom_profiling=env_config["custom_profiling"])
+                        custom_profiling=env_config["custom_profiling"],
+                        reward_add=env_config["reward_add"])
     
     action_size = env.action_size
     state_dim = env.state_space.shape[0]

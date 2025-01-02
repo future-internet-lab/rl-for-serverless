@@ -19,7 +19,7 @@ class ServerlessEnv(gym.Env):
     def __init__(self, traffic_generator, render_mode=None, num_service=1, timestep=120, 
                  num_container=[100], container_lifetime=3600*8, energy_price=8e-6, 
                  ram_profit=10e-6, cpu_profit=10e-6, delay_coff=1, aban_coff=1, energy_coff=1, 
-                 custom_profiling=False, profiling_path=None, queue_size=5000):
+                 custom_profiling=False, profiling_path=None, queue_size=5000, reward_add=0):
         # Initialize other attributes and perform setup as needed
         super(ServerlessEnv, self).__init__() 
          
@@ -133,6 +133,8 @@ class ServerlessEnv(gym.Env):
         # Action masking
         self.action_mask = np.zeros((self.action_size),dtype=np.int8)
         self._cal_action_mask()
+        
+        self.reward_add = reward_add
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -241,7 +243,7 @@ class ServerlessEnv(gym.Env):
 
 
     def _get_reward(self):
-        self.temp_reward = 2 + self.profit - (self.delay_coff*self.delay_penalty + self.aban_coff*self.abandone_penalty + self.engery_coff*self.energy_cost)
+        self.temp_reward = self.reward_add + self.profit - (self.delay_coff*self.delay_penalty + self.aban_coff*self.abandone_penalty + self.engery_coff*self.energy_cost)
         return self.temp_reward
     
     def reset(self, seed=42, options=None):
