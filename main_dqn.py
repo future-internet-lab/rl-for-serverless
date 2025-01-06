@@ -26,9 +26,9 @@ def test(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     env = ServerlessEnv(traffic_generator=traffic_gen,
                         render_mode=env_config["render_mode"],
                         num_service=env_config["num_service"],
-                        timestep=env_config["timestep"],
+                        step_interval=env_config["step_interval"],
                         num_container=env_config["num_container"],
-                        container_lifetime=env_config["container_lifetime"],
+                        cont_span=env_config["cont_span"],
                         energy_price=env_config["energy_price"],
                         ram_profit=env_config["ram_profit"],
                         cpu_profit=env_config["cpu_profit"],
@@ -85,7 +85,7 @@ def test(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     
         
     lp.append_to_json(log_data,log_path)      
-    lp.plot_log_fig(log_path, eps, env_config["timestep"], env_config["num_service"])
+    lp.plot_log_fig(log_path, eps, env_config["step_interval"], env_config["num_service"])
 
 
 # Training the model            
@@ -101,9 +101,9 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     env = ServerlessEnv(traffic_generator=traffic_gen,
                         render_mode=env_config["render_mode"],
                         num_service=env_config["num_service"],
-                        timestep=env_config["timestep"],
+                        step_interval=env_config["step_interval"],
                         num_container=env_config["num_container"],
-                        container_lifetime=env_config["container_lifetime"],
+                        cont_span=env_config["cont_span"],
                         energy_price=env_config["energy_price"],
                         ram_profit=env_config["ram_profit"],
                         cpu_profit=env_config["cpu_profit"],
@@ -147,8 +147,10 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
         log_data = []
         while not done:
             action = agent.get_action(state=state,env=env,epsilon=drl_hyper_params["epsilon"])
-            next_state, reward, done, _ = env.step(action)
-            tab[e * env.current_time + env.current_time] = {"action": action, "reward": reward, "next_state": next_state}
+            next_state, reward, done, trun = env.step(action)
+            if trun:
+                return
+            tab[e * env.now + env.now] = {"action": action, "reward": reward, "next_state": next_state}
             next_state = np.reshape(next_state, [state_dim])
             agent.store_transition(state, action, reward, next_state, False)
             state = next_state
@@ -246,12 +248,12 @@ def main(args):
     if env_config["traffic_generator"] == "simulated":
         traffic_gen = PoissonGenerator(size=env_config["num_service"],
                                     avg_requests_per_second=env_config["average_requests"],
-                                    timeout=env_config["rq_timeout"],
+                                    max_queue_delay=env_config["rq_timeout"],
                                     max_rq_active_time=env_config["max_rq_active_time"])
     elif env_config["traffic_generator"] == "real":
         traffic_gen = RealTraceGenerator(active_time_stats_file=env_config["active_time_stats_file"],
                                          arrival_request_stats_file=env_config["arrival_request_stats_file"],
-                                         time_out=env_config["rq_timeout"],
+                                         max_queue_delay=env_config["rq_timeout"],
                                          num_services=env_config["num_service"])
         
     if args['observe'] is not None:

@@ -2,11 +2,11 @@
     {
         "render_mode": null,
         "num_service": 1,
-        "timestep": 120,
+        "step_interval": 120,
         "num_container": [
             2000
         ],
-        "container_lifetime": 28800,
+        "cont_span": 28800,
         "traffic_generator": "real",
         "active_time_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
         "arrival_request_stats_file": "/home/mec/hai/RL-for-serverless/envs/request.csv",

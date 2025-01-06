@@ -47,7 +47,7 @@ def calc_accept_ratio(
     return acceptance_ratio
 
 
-def plot_log_fig(log_file, training_num, timestep_value, num_service):
+def plot_log_fig(log_file, training_num, step_interval_value, num_service):
     log_folder = os.path.dirname(log_file)
     with open(log_file, 'r') as json_file:
         data = json.load(json_file)
@@ -77,12 +77,12 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
             s += 1
                 
         
-        timesteps = np.arange(s) * timestep_value
+        step_intervals = np.arange(s) * step_interval_value
         # Plot acceptance ratio
         plt.figure()
         for i in range(num_service):
             acpt_ratios =calc_accept_ratio(in_sys_rqs[service], done_rqs[service], in_queue_rqs[service], new_rqs[service])
-            plt.plot(timesteps, acpt_ratios, label=f'Service {i+1}')
+            plt.plot(step_intervals, acpt_ratios, label=f'Service {i+1}')
         plt.xlabel('Time (s)')
         plt.ylabel('Acceptance Ratio')
         plt.title('Avg Acceptance Ratio')
@@ -134,7 +134,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
 
         # Plot reward
         plt.figure()
-        plt.plot(timesteps, rewards, label='Avg Rewards', color='red')
+        plt.plot(step_intervals, rewards, label='Avg Rewards', color='red')
         plt.xlabel('Time (s)')
         plt.ylabel('Rewards')
         plt.title('Reward over step')
@@ -144,7 +144,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
 
         # Plot Energy consumption
         plt.figure()
-        plt.plot(timesteps, energy_consumptions, label='Energy Consumption', color='orange')
+        plt.plot(step_intervals, energy_consumptions, label='Energy Consumption', color='orange')
         plt.xlabel('Time (s)')
         plt.ylabel('Energy Consumption (J)')
         plt.title('Cummulative Energy Consumption')
@@ -157,7 +157,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         # Plot area container state
         for i in range(num_service):
             plt.figure()
-            plt.stackplot(timesteps, np.array(container_states[i]).T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
+            plt.stackplot(step_intervals, np.array(container_states[i]).T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
             plt.xlabel('Time (s)')
             plt.ylabel('Number container')
             plt.title('Ratio between container states of service {}'.format(service))
@@ -169,7 +169,7 @@ def plot_log_fig(log_file, training_num, timestep_value, num_service):
         for i in range(num_service):
             plt.figure()
             for k in range(num_ctn_states):
-                plt.plot(timesteps, np.array(container_states[i]).T[k], label=f'{Container_States.State_Name[k]}')
+                plt.plot(step_intervals, np.array(container_states[i]).T[k], label=f'{Container_States.State_Name[k]}')
             plt.xlabel('Time (s)')
             plt.ylabel('Number container')
             plt.title('Ratio between container states of service {}'.format(service))
