@@ -145,11 +145,10 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
         done = False
         cum_reward = 0
         log_data = []
-        while not done:
+        while not done or not trun:
             action = agent.get_action(state=state,env=env,epsilon=drl_hyper_params["epsilon"])
             next_state, reward, done, trun = env.step(action)
-            if trun:
-                return
+            
             tab[e * env.now + env.now] = {"action": action, "reward": reward, "next_state": next_state}
             next_state = np.reshape(next_state, [state_dim])
             agent.store_transition(state, action, reward, next_state, False)
