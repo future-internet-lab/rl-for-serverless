@@ -146,11 +146,13 @@ class ServerlessEnv(gym.Env):
         # Our action space is a Box space with a shape of (2, self.n_svc) with diffirent limit for each service column
         self.raw_action_space = self.action_space_init() 
         # Our action space too complex to use gym's flatten_space, so we implement our one.
+        self.lo_action_size = np.zeros(self.n_svc,dtype=np.uint32)
         self.action_size = self._num_action_cal() 
         self.action_space = gym.spaces.Discrete(self.action_size,seed=42)
         
         # Action masking
-        self.action_mask = np.zeros((self.action_size),dtype=np.int8)
+        self.action_mask_raw = np.zeros(tuple(self.lo_action_size),dtype=np.int8) # Action mask (n_svc dimensions)
+        self.action_mask = self.action_mask_raw.ravel(order='F') # Flattened action mask (column-major order)
         self._cal_action_mask()
         
         self.rwd_add = reward_add
@@ -219,8 +221,9 @@ class ServerlessEnv(gym.Env):
         """
         num_action = 1
         for svc  in range(self.n_svc): 
-            num_action *= (1 + self.n_trans*self.max_n_ctn[svc])
-        return int(num_action)
+            self.lo_action_size[svc] = int(1+self.n_trans*self.max_n_ctn[svc])
+            num_action *= self.lo_action_size[svc]
+        return num_action
 
     
     def _num_state_cal(self):
@@ -247,17 +250,11 @@ class ServerlessEnv(gym.Env):
 
 
     def _cal_action_mask(self):
-        """
-        Calculate the action mask for the environment.
-        This method fills the action mask with 1s initially and then sets specific
-        ranges to 0 based on the service and trans constraints. The action mask
-        is used to determine which actions are valid in the current state of the environment.
-        The method iterates over the services and transactions to calculate the minimum
-        and maximum indices for the action mask that should be set to 0. The calculation
-        involves the number of services (`n_svc`), the maximum number of containers per
-        service (`max_n_ctn`), and the number of transactions (`n_trans`).
-        The action mask is updated in a reversed order of services, and the multiplicative
-        factor (`mul`) is adjusted accordingly to ensure the correct indices are calculated.
+        """"
+        Calculate the action mask for the current state of the environment.
+        This method updates the `action_mask_raw` array to indicate which actions are valid (1) and which are invalid (0)
+        based on the current state of the container matrix (`_cont_st_mtx`). The action mask is then flattened in column-major
+        order and stored in `action_mask`.
         
         Theory:
         - https://en.wikipedia.org/wiki/Row-_and_column-major_order
@@ -266,19 +263,22 @@ class ServerlessEnv(gym.Env):
         Returns:
             None
         """
-        self.action_mask.fill(1)
-        mul = 1
-        for svc in range(self.n_svc-1):
-            mul *= (self.max_n_ctn[svc]*self.n_trans + 1)
-        
-        for svc in reversed(range(self.n_svc)):
-            for trans in range(1,self.n_trans+1):
-                min_lo_idx = mul*(self._cont_st_mtx[svc][self.TRANS_ST_MAPPING[trans]] + 1 + (trans-1)*self.max_n_ctn[svc])
-                max_lo_idx = mul*trans*self.max_n_ctn[svc]
+        self.action_mask_raw.fill(1)
+        # print("current container mtx", self._cont_st_mtx)
+        for svc in range(self.n_svc):
+            # print("svc", svc)
+            slices = [slice(None)] * self.n_svc
+            for trans in range(1, self.n_trans + 1):
+                min_lo_idx = self._cont_st_mtx[svc][self.TRANS_ST_MAPPING[trans]] + 1 + (trans - 1) * self.max_n_ctn[svc]
+                max_lo_idx = trans * self.max_n_ctn[svc]
+                # print("trans", trans)
+                # print("min_lo_idx", min_lo_idx)
+                # print("max_lo_idx", max_lo_idx)
                 if min_lo_idx <= max_lo_idx:
-                    self.action_mask[min_lo_idx:(max_lo_idx+1)] = 0
-            if svc > 0:
-                mul //= (self.max_n_ctn[svc-1]*self.n_trans + 1)
+                    slices[svc] = slice(min_lo_idx, max_lo_idx + 1)
+                    self.action_mask_raw[tuple(slices)] = 0
+        
+        self.action_mask = self.action_mask_raw.ravel(order='F') # Flattened action mask (column-major order)
             
                  
     def gen_rand_cont_mtx(self):
@@ -368,19 +368,33 @@ class ServerlessEnv(gym.Env):
         self.total_new_req += num_new_req
             
     def _set_truncated(self):
-        temp = self._cont_st_mtx + self.cur_act_mtx
+        """
+        Checks if the current state or action exceeds resource limits or results in invalid container states,
+        and sets the truncated flag and reason accordingly.
+        This method performs the following checks:
+        1. Computes the temporary resource usage by applying the current action matrix to the container state matrix.
+        2. If the temporary resource usage exceeds the CPU or RAM limits, sets the truncated flag to True and
+           sets the truncated reason to "Resource limit exceeded". Additionally, prints debug information.
+        3. Computes the temporary container state by adding the current action matrix to the container state matrix.
+        4. If any value in the temporary container state is negative, sets the truncated flag to True and
+           sets the truncated reason to "Wrong number action". Additionally, prints debug information.
+        """
+        tmp_res_usage = np.sum(np.dot(self._cont_st_mtx, self.cont_res_usage),axis=0)
+        if (tmp_res_usage[Resource_Type.CPU] > self.res_limit[Resource_Type.CPU]
+            or tmp_res_usage[Resource_Type.RAM] > self.res_limit[Resource_Type.RAM]):
+            self.truncated = True
+            self.truncated_reason = "Resource limit exceeded"
+            print("reason: ", self.truncated_reason)
+            print("container matrix: ", self._cont_st_mtx)
+            print("action matrix: ", self.cur_act_mtx)
+            print("current resource usage: ", self.ptu_res_usage)
+            print("resource if action is applied: ", tmp_res_usage)
+            print("now: ", self.now)
+        else: 
+            pass
         
-        # temp_current_usage = np.sum(np.dot(self._cont_st_mtx, Container_Resource_Usage),axis=0)
-        # # Instantaneous resource consumption due to state transition
-        # if (temp_current_usage[Resource_Type.CPU] > self.limited_resource[Resource_Type.CPU]
-        #     or temp_current_usage[Resource_Type.RAM] > self.limited_resource[Resource_Type.RAM]):
-        #     # If instantaneous resource consumption exceeds the limit, state transition is not allowed
-        #     self.cur_act_mtx.fill(0)
-        # else: 
-        #     pass
-
-        if (np.any(temp < 0)):
-            # If the number of containers is less than 0, state transition is not allowed
+        tmp_cont_st = self._cont_st_mtx + self.cur_act_mtx
+        if (np.any(tmp_cont_st < 0)):
             self.truncated = True
             self.truncated_reason = "Wrong number action"
             print("reason: ", self.truncated_reason)
@@ -389,11 +403,6 @@ class ServerlessEnv(gym.Env):
             print("action index: ", self.cur_act_idx)
             print("action mask value: ", self.action_mask[self.cur_act_idx])
             print("now: ", self.now)
-            # print(self.cur_act_mtx)
-            # print(self.cur_act_idx)
-            # print(self.action_mask[self.cur_act_idx])
-            # print(self.cur_act_idx)
-            # print(self.now)
         else: 
             pass
             
@@ -518,16 +527,16 @@ class ServerlessEnv(gym.Env):
                     number of containers for each service, and the second row contains the
                     transition type for each service.
         """
+        self.cur_act_idx = act_idx
         act_mtx = np.zeros((2,self.n_svc),dtype=np.int32)
         lo_idx = 0
         mul = 1 
         for svc in range(self.n_svc-1):
             mul *= (self.max_n_ctn[svc]*self.n_trans + 1)
-            
+        
         for svc in reversed(range(self.n_svc)):
             lo_idx = act_idx // mul # local index of an action in action subspace of a service
             if lo_idx == 0:
-                print("action 0 ne")
                 act_mtx[0][svc] = 0
                 act_mtx[1][svc] = 0
             else:
@@ -543,7 +552,6 @@ class ServerlessEnv(gym.Env):
             act_unit.append(self.TRANS[svc])
         
         self.cur_act_mtx = act_coff @ act_unit
-        self.cur_act_idx = act_idx
         return act_mtx
         
     def _clear_cache(self):
