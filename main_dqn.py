@@ -66,14 +66,15 @@ def test(args, folder_base, env_config, traffic_gen, drl_hyper_params):
     log_data = {}
     for e in range(eps):
         done = False
+        trun = False
         cum_reward = 0
         rewards = []
         state = env.reset()
         state = np.reshape(state, [state_dim])
         log_data[f"Episode {e}"] = []
-        while not done:
+        while not done and not trun:
             action = agent.get_action(state, env=env, epsilon=0)
-            next_state, reward, done, _ = env.step(action)
+            next_state, reward, done, trun = env.step(action)
             next_state = np.reshape(next_state, [state_dim])
             state = next_state
             rewards.append(reward)
@@ -143,9 +144,10 @@ def train(args, folder_base, env_config, traffic_gen, drl_hyper_params):
         state = env.reset()
         state = np.reshape(state, [state_dim])
         done = False
+        trun = False
         cum_reward = 0
         log_data = []
-        while not done or not trun:
+        while not done and not trun:
             action = agent.get_action(state=state,env=env,epsilon=drl_hyper_params["epsilon"])
             next_state, reward, done, trun = env.step(action)
             
