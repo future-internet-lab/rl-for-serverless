@@ -4,7 +4,7 @@
         "num_service": 1,
         "step_interval": 120,
         "num_container": [
-            5
+            5000
         ],
         "cont_span": 28800,
         "traffic_generator": "real",
@@ -26,7 +26,7 @@
         "delay_coff": 1,
         "aban_coff": 1,
         "energy_coff": 2,
-        "reward_add": 50
+        "reward_add": 0
     },
     {
         "episodes": 1000,
