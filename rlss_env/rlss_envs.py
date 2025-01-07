@@ -5,8 +5,8 @@ import math
 
 from rlss_env.request import Request_States
 import rlss_env.profiling as profiling
-from rlss_env.profiling import Resource_Type
-from rlss_env.container import Container_States
+from rlss_env.profiling import Resource_Type as RT
+from rlss_env.container import Container_States as CS
 
 class ServerlessEnv(gym.Env):
     metadata = {}
@@ -47,36 +47,40 @@ class ServerlessEnv(gym.Env):
                                np.array([0, 0, 1, -1, 0]),   # Warm_cpu -> Warm_disk
                                ])
 
-        self.TRANS_ST_MAPPING = {1: Container_States.Null,
-                                 2: Container_States.Null,
-                                 3: Container_States.Cold,
-                                 4: Container_States.Cold,
-                                 5: Container_States.Cold,
-                                 6: Container_States.Warm_Disk,
-                                 7: Container_States.Warm_Disk,
-                                 8: Container_States.Warm_CPU,
+        self.TRANS_ST_MAPPING = {1: CS.Null,
+                                 2: CS.Null,
+                                 3: CS.Cold,
+                                 4: CS.Cold,
+                                 5: CS.Cold,
+                                 6: CS.Warm_Disk,
+                                 7: CS.Warm_Disk,
+                                 8: CS.Warm_CPU,
                                  }
         
         self.cont_res_usage = None # Container resource usage
         self.trans_cost = None # Transition cost
         self.get_res_profile(profiling_path, custom_profiling)
+        # We use this multiple times, so we store it as an attribute
+        self.cpu_delta = self.cont_res_usage[CS.Active][RT.CPU] - self.cont_res_usage[CS.Warm_CPU][RT.CPU]
+        self.ram_delta = self.cont_res_usage[CS.Active][RT.RAM] - self.cont_res_usage[CS.Warm_CPU][RT.RAM]
+        
         
         self.now = 0  # Start at time 0
         self.step_interval = step_interval # The step_interval of time between two steps
         
         self.n_svc = num_service  # The number of services
-        self.n_ctn_states = len(Container_States.State_Name) # The number of container states
+        self.n_ctn_states = len(CS.State_Name) # The number of container states
         self.n_trans = self.TRANS.shape[0] - 1 # The number of transitions, excluding the no-change transition
         
         self.max_n_ctn = np.array(num_container) # The maximum number of containers for each service
         self.cont_span = cont_span  # The time span of the container
         
-        self.n_req_states = len(Container_States.State_Name)  # The number of request states
+        self.n_req_states = len(CS.State_Name)  # The number of request states
     
         self.traffic_generator = traffic_generator # The traffic generator
         self.queue_size = queue_size # The size of the queue (currently not used)
         
-        self.n_res_types = len([attr for attr in vars(Resource_Type) if not attr.startswith('__')]) - 1   
+        self.n_res_types = len([attr for attr in vars(RT) if not attr.startswith('__')]) - 1   
         self.res_limit = [1000 * 1024, 1000 * 100]  # Set [RAM, CPU] limit of system
         self.en_price = energy_price # unit cent/Jun/s 
         self.ram_profit = ram_profit # unit cent/Gb/s
@@ -380,8 +384,8 @@ class ServerlessEnv(gym.Env):
            sets the truncated reason to "Wrong number action". Additionally, prints debug information.
         """
         tmp_res_usage = np.sum(np.dot(self._cont_st_mtx, self.cont_res_usage),axis=0)
-        if (tmp_res_usage[Resource_Type.CPU] > self.res_limit[Resource_Type.CPU]
-            or tmp_res_usage[Resource_Type.RAM] > self.res_limit[Resource_Type.RAM]):
+        if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU]
+            or tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
             self.truncated = True
             self.truncated_reason = "Resource limit exceeded"
             print("reason: ", self.truncated_reason)
@@ -438,18 +442,18 @@ class ServerlessEnv(gym.Env):
                 trans_type = self.fmt_act[1][svc] # Transition type for each service in action matrix
                 
                 # Complete state transition
-                if relative_time == np.ceil(self.trans_cost[trans_type][Resource_Type.Time]):
+                if relative_time == np.ceil(self.trans_cost[trans_type][RT.Time]):
                     self._cont_st_mtx[svc] += pos_act_mtx[svc]
                     
-                elif relative_time < np.ceil(self.trans_cost[trans_type][Resource_Type.Time]):
+                elif relative_time < np.ceil(self.trans_cost[trans_type][RT.Time]):
                     # Instantaneous resource consumption due to state transition   
-                    self.ptu_res_usage[Resource_Type.CPU] += self.trans_cost[trans_type][Resource_Type.CPU]*trans_num 
-                    self.ptu_res_usage[Resource_Type.RAM] += self.trans_cost[trans_type][Resource_Type.RAM]*trans_num 
-                    self.ptu_res_usage[Resource_Type.Power] += self.trans_cost[trans_type][Resource_Type.Power]*trans_num
+                    self.ptu_res_usage[RT.CPU] += self.trans_cost[trans_type][RT.CPU]*trans_num 
+                    self.ptu_res_usage[RT.RAM] += self.trans_cost[trans_type][RT.RAM]*trans_num 
+                    self.ptu_res_usage[RT.Power] += self.trans_cost[trans_type][RT.Power]*trans_num
                 
                 # Handle requests in queue
                 for req in self.queued_reqs[svc][:]:
-                    # Release requests that have timed out
+                    # Release requests that have timed out in head's queue
                     if self.now == np.ceil(req.max_queue_delay + req.enq_ts):
                         req.set_state(Request_States.Rejected)
                         req.set_exit_ts(self.now)
@@ -457,44 +461,54 @@ class ServerlessEnv(gym.Env):
                         self.queued_reqs[svc].remove(req)
                         
                         # Abandon penalty is applied only once at the time the request times out and is rejected by the system
-                        self.aban_pen += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*req.active_time
-                        self.aban_pen += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*req.active_time
-                    else:
-                        # If there are available resources, push the request into the system
-                        if self._cont_st_mtx[svc][Container_States.Warm_CPU] > 0:
-                            req.set_state(Request_States.In_System)
-                            req.set_deq_ts(self.now)
-                            self.total_accepted_req [svc] += 1
-                            self.active_reqs[svc].append(req)
-                            self.queued_reqs[svc].remove(req)
-                            self._cont_st_mtx[svc][Container_States.Active] += 1
-                            self._cont_st_mtx[svc][Container_States.Warm_CPU] -= 1
-                            
-                            # Delay penalty is applied only once at the time the request is accepted by the system
-                            delay_time = req.deq_ts - req.enq_ts
-                            self.delay_pen += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*delay_time
-                            self.delay_pen += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*delay_time
-                            
-                            self.req_delay[svc].append(delay_time)
+                        self.aban_pen += self.cont_res_usage[CS.Active][RT.RAM]*self.ram_profit*req.active_duration
+                        self.aban_pen += self.cont_res_usage[CS.Active][RT.CPU]*self.cpu_profit*req.active_duration
+                        continue
+                    
+                    # If no available resources, reject the request
+                    if self._cont_st_mtx[svc][CS.Warm_CPU] == 0:
+                        break
+                    if self.ptu_res_usage[RT.CPU] + self.cpu_delta > self.res_limit[RT.CPU]:
+                        break
+                    if self.ptu_res_usage[RT.RAM] + self.ram_delta > self.res_limit[RT.RAM]:
+                        break
+                    
+                    # Accept requests that have not timed out
+                    req.set_state(Request_States.In_System)
+                    req.set_deq_ts(self.now)
+                    self.total_accepted_req[svc] += 1
+                    self.active_reqs[svc].append(req)
+                    self.queued_reqs[svc].remove(req)
+                    self._cont_st_mtx[svc][CS.Active] += 1
+                    self._cont_st_mtx[svc][CS.Warm_CPU] -= 1
+                    self.ptu_res_usage[RT.CPU] += self.cpu_delta
+                    self.ptu_res_usage[RT.RAM] += self.ram_delta
+                    
+                    # Delay penalty is applied only once at the time the request is accepted by the system
+                    delay_time = req.deq_ts - req.enq_ts
+                    self.delay_pen += self.cont_res_usage[CS.Active][RT.RAM]*self.ram_profit*delay_time
+                    self.delay_pen += self.cont_res_usage[CS.Active][RT.CPU]*self.cpu_profit*delay_time
+                    
+                    self.req_delay[svc].append(delay_time)
 
                 # Handle requests in system
                 for req in self.active_reqs[svc][:]:
-                    # Resource consumption by request
-                    # self.ptu_res_usage  += REQ_RES_USAGE[svc]
                     # Release requests that have been completed
-                    if req.active_time == np.ceil(self.now - req.deq_ts):
+                    if req.active_duration == np.ceil(self.now - req.deq_ts):
                         req.set_state(Request_States.Done)
                         req.set_exit_ts(self.now)
                         self.done_reqs[svc].append(req)
                         self.active_reqs[svc].remove(req)
-                        self._cont_st_mtx[svc][Container_States.Active] -= 1
-                        self._cont_st_mtx[svc][Container_States.Warm_CPU] += 1
+                        self._cont_st_mtx[svc][CS.Active] -= 1
+                        self._cont_st_mtx[svc][CS.Warm_CPU] += 1
+                        self.ptu_res_usage[RT.CPU] -= self.cpu_delta
+                        self.ptu_res_usage[RT.RAM] -= self.ram_delta
                 
                 # Profit of requests accepted into the system in 1 second
-                self.profit += self.cont_res_usage[Container_States.Active][Resource_Type.RAM]*self.ram_profit*self._cont_st_mtx[svc][Container_States.Active]
-                self.profit += self.cont_res_usage[Container_States.Active][Resource_Type.CPU]*self.cpu_profit*self._cont_st_mtx[svc][Container_States.Active]
+                self.profit += self.cont_res_usage[CS.Active][RT.RAM]*self.ram_profit*self._cont_st_mtx[svc][CS.Active]
+                self.profit += self.cont_res_usage[CS.Active][RT.CPU]*self.cpu_profit*self._cont_st_mtx[svc][CS.Active]
             
-            self.en_cost += self.ptu_res_usage [Resource_Type.Power]*self.en_price 
+            self.en_cost += self.ptu_res_usage[RT.Power]*self.en_price 
             self.cum_res_usage += self.ptu_res_usage 
                 
             self.now += 1
@@ -504,7 +518,7 @@ class ServerlessEnv(gym.Env):
     def _cal_sys_eval(self):
         for svc in range(self.n_svc):    
             self.cur_n_queued_req[svc] = len(self.queued_reqs[svc])
-            self.cur_n_active_req[svc] = self._cont_st_mtx[svc][Container_States.Active]
+            self.cur_n_active_req[svc] = self._cont_st_mtx[svc][CS.Active]
             self.total_done_req[svc] = len(self.done_reqs[svc])
             self.total_rej_req[svc] = len(self.rej_reqs[svc])
             
@@ -614,12 +628,12 @@ class ServerlessEnv(gym.Env):
             "abandone_penalty value": self.aban_coff*self.aban_pen,
             "delay_penalty value": self.delay_coff*self.delay_pen,
             "energy_cost value": self.en_coff*self.en_cost,
-            "energy_consumption": self.cum_res_usage[Resource_Type.Power],
-            "ram_consumption": self.cum_res_usage[Resource_Type.RAM],
-            "cpu_consumption": self.cum_res_usage[Resource_Type.CPU],
-            "per_second_energy_usage": self.ptu_res_usage [Resource_Type.Power],
-            "per_second_ram_usage": self.ptu_res_usage [Resource_Type.RAM],
-            "per_second_cpu_usage": self.ptu_res_usage [Resource_Type.CPU]
+            "energy_consumption": self.cum_res_usage[RT.Power],
+            "ram_consumption": self.cum_res_usage[RT.RAM],
+            "cpu_consumption": self.cum_res_usage[RT.CPU],
+            "per_second_energy_usage": self.ptu_res_usage [RT.Power],
+            "per_second_ram_usage": self.ptu_res_usage [RT.RAM],
+            "per_second_cpu_usage": self.ptu_res_usage [RT.CPU]
         } 
         return log_data
     
