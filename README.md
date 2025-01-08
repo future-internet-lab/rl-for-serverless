@@ -74,12 +74,12 @@ The environment configuration file contains various settings for the serverless 
 - `step_interval`: The interval between steps. Time unit depends on how often agent will make an action.
 - `num_container`: The number of containers.
 - `cont_span`: The span of container activity .
-- `traffic_generator`: The type of traffic generator.
-- `active_time_stats_file`: The file path for active time statistics.
+- `traffic_generator`: The type of traffic generator. 'real' or 'simulated'.
+- `active_duration_stats_file`: The file path for active time statistics.
 - `arrival_request_stats_file`: The file path for arrival request statistics.
 - `rq_timeout`: The request timeout.
 - `average_requests`: The average number of requests.
-- `max_rq_active_time`: The maximum request active time.
+- `max_rq_active_duration`: The maximum request active time.
 - `energy_price`: The price of energy.
 - `ram_profit`: The profit from RAM usage.
 - `cpu_profit`: The profit from CPU usage.
@@ -97,11 +97,11 @@ Example environment configuration:
     "num_container": [5000],
     "cont_span": 28800,
     "traffic_generator": "real",
-    "active_time_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
+    "active_duration_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
     "arrival_request_stats_file": "/home/mec/hai/RL-for-serverless/envs/request.csv",
     "rq_timeout": [2],
     "average_requests": 0.2,
-    "max_rq_active_time": {
+    "max_rq_active_duration": {
         "type": "random",
         "value": [60]
     },

@@ -4,17 +4,17 @@
         "num_service": 1,
         "step_interval": 120,
         "num_container": [
-            5000
+            1000
         ],
         "cont_span": 28800,
-        "traffic_generator": "real",
-        "active_time_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
+        "traffic_generator": "simulated",
+        "active_duration_stats_file": "/home/mec/hai/RL-for-serverless/envs/percentile.csv",
         "arrival_request_stats_file": "/home/mec/hai/RL-for-serverless/envs/request.csv",
         "rq_timeout": [
             2
         ],
-        "average_requests": 0.2,
-        "max_rq_active_time": {
+        "average_requests": 10,
+        "max_rq_active_duration": {
             "type": "random",
             "value": [
                 60
@@ -25,11 +25,11 @@
         "cpu_profit": 1e-05,
         "delay_coff": 1,
         "aban_coff": 1,
-        "energy_coff": 2,
+        "energy_coff": 1,
         "reward_add": 0
     },
     {
-        "episodes": 1000,
+        "episodes": 10,
         "batch_size": 32,
         "max_env_steps": 50,
         "batch_update": 20,

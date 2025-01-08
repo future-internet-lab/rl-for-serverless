@@ -1,4 +1,4 @@
-from rlss_env.rlss_envs import Container_States
+from rlss_env.container import Container_States as CS
 import os 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -152,12 +152,12 @@ def plot_log_fig(log_file, training_num, step_interval_value, num_service):
         plt.savefig(os.path.join(log_folder, f'energy_cons_episode_{e}.png'))  
         plt.close()
         
-        num_ctn_states = len(Container_States.State_Name)
+        num_ctn_states = len(CS.State_Name)
         
         # Plot area container state
         for i in range(num_service):
             plt.figure()
-            plt.stackplot(step_intervals, np.array(container_states[i]).T, labels=[f'{Container_States.State_Name[i]}' for i in range(num_ctn_states)])
+            plt.stackplot(step_intervals, np.array(container_states[i]).T, labels=[f'{CS.State_Name[i]}' for i in range(num_ctn_states)])
             plt.xlabel('Time (s)')
             plt.ylabel('Number container')
             plt.title('Ratio between container states of service {}'.format(service))
@@ -169,7 +169,7 @@ def plot_log_fig(log_file, training_num, step_interval_value, num_service):
         for i in range(num_service):
             plt.figure()
             for k in range(num_ctn_states):
-                plt.plot(step_intervals, np.array(container_states[i]).T[k], label=f'{Container_States.State_Name[k]}')
+                plt.plot(step_intervals, np.array(container_states[i]).T[k], label=f'{CS.State_Name[k]}')
             plt.xlabel('Time (s)')
             plt.ylabel('Number container')
             plt.title('Ratio between container states of service {}'.format(service))

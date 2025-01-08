@@ -26,11 +26,11 @@ class Request():
         The dequeue timestamp of the request (default is 0).
     exit_ts : int
         The exit timestamp of the request (default is 0).
-    active_time : int, optional
-        The active time of the request (default is 0).
+    active_duration : int, optional
+        The active duration of the request (default is 0).
     """
     def __init__(self, type: int, state: int = 0, 
-                max_queue_delay: int = 0, enq_ts: int = 0, active_time: int = 0):
+                max_queue_delay: int = 0, enq_ts: int = 0, active_duration: int = 0):
         self._uuid = uuid.uuid1()
         self.type = type
         self.max_queue_delay =  int(max_queue_delay) 
@@ -38,10 +38,10 @@ class Request():
         self.deq_ts = 0
         self.exit_ts = 0
         self.state = state 
-        self.active_time = int(active_time)
+        self.active_duration = int(active_duration)
         
-    def set_active_time(self, a):
-        self.active_time = int(a)
+    def set_active_duration(self, a):
+        self.active_duration = int(a)
         
     def set_time_out(self, a):
         self.max_queue_delay = int(a)

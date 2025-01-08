@@ -2,6 +2,7 @@ import numpy as np
 import argparse
 import torch
 import os, json
+import time
 from datetime import datetime
 import matplotlib.pyplot as plt
 
@@ -250,9 +251,9 @@ def main(args):
         traffic_gen = PoissonGenerator(size=env_config["num_service"],
                                     avg_requests_per_second=env_config["average_requests"],
                                     max_queue_delay=env_config["rq_timeout"],
-                                    max_rq_active_time=env_config["max_rq_active_time"])
+                                    max_rq_active_duration=env_config["max_rq_active_duration"])
     elif env_config["traffic_generator"] == "real":
-        traffic_gen = RealTraceGenerator(active_time_stats_file=env_config["active_time_stats_file"],
+        traffic_gen = RealTraceGenerator(active_duration_stats_file=env_config["active_duration_stats_file"],
                                          arrival_request_stats_file=env_config["arrival_request_stats_file"],
                                          max_queue_delay=env_config["rq_timeout"],
                                          num_services=env_config["num_service"])
@@ -262,7 +263,10 @@ def main(args):
     else:
         with open(os.path.join(folder_base,"hyperparameters.json"), 'w') as file:
             json.dump([env_config, drl_hyper_params], file, indent=4)
+        start_time = time.time()
         train(args, folder_base, env_config, traffic_gen, drl_hyper_params)
+        training_time = time.time() - start_time
+        print(f"Training time: {training_time:.6f} seconds")
         test(args, folder_base, env_config, traffic_gen, drl_hyper_params)       
 
 if __name__ == "__main__":

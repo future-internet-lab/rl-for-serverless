@@ -12,7 +12,7 @@ class Resource_Type:
     Time = 3
 
 
-REQ_ACTIVE_TIME = np.array([240, 360, 480, 600])
+REQ_ACTIVE_DURATION = np.array([240, 360, 480, 600])
 
 # Generate transition cost for moving to other states
 # [RAM, CPU, Power, Time]  

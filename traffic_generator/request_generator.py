@@ -56,11 +56,11 @@ def estimate_dist(avg, percentiles):
     return mu, sigma
 
 class TrafficGenerator(ABC):
-    def create_request(self, request_type, now, active_time):
-        return Request(type=request_type, enq_ts=int(now), max_queue_delay=self.max_queue_delay[request_type], active_time=active_time)
+    def create_request(self, request_type, now, active_duration):
+        return Request(type=request_type, enq_ts=int(now), max_queue_delay=self.max_queue_delay[request_type], active_duration=active_duration)
 
     @abstractmethod
-    def determine_active_time(self, request_type):
+    def determine_active_duration(self, request_type):
         pass
     
     @abstractmethod
@@ -68,13 +68,13 @@ class TrafficGenerator(ABC):
         pass
 
 class PoissonGenerator(TrafficGenerator):
-    def __init__(self, size=1, avg_requests_per_second=1, max_queue_delay=[20], max_rq_active_time={"type": "random", "value": [60]}):
+    def __init__(self, size=1, avg_requests_per_second=1, max_queue_delay=[20], max_rq_active_duration={"type": "random", "value": [60]}):
         self.name = "Poisson"
         self.num_services = size
         self.avg_requests_per_second = avg_requests_per_second
         self.max_queue_delay = max_queue_delay
-        self.max_rq_active_time = max_rq_active_time
-        # super().__init__(size, avg_requests_per_second, max_queue_delay, max_rq_active_time)
+        self.max_rq_active_duration = max_rq_active_duration
+        # super().__init__(size, avg_requests_per_second, max_queue_delay, max_rq_active_duration)
 
     def ran_norm_gen(self, mean, std_dev):
         value = np.random.normal(loc=mean, scale=std_dev)
@@ -82,28 +82,28 @@ class PoissonGenerator(TrafficGenerator):
         positive_int_value = max(1, int_value)
         return positive_int_value
     
-    def determine_active_time(self, request_type):
-        if self.max_rq_active_time["type"] == "random":
-            return self.ran_norm_gen(self.max_rq_active_time["value"][request_type], self.max_rq_active_time["value"][request_type]/2)
+    def determine_active_duration(self, request_type):
+        if self.max_rq_active_duration["type"] == "random":
+            return self.ran_norm_gen(self.max_rq_active_duration["value"][request_type], self.max_rq_active_duration["value"][request_type]/2)
         else:
-            return self.max_rq_active_time["value"][request_type] or profiling.REQ_ACTIVE_TIME[request_type]
+            return self.max_rq_active_duration["value"][request_type] or profiling.REQ_ACTIVE_DURATION[request_type]
         
     def generate_requests(self, queue, now):
         rng = np.random.default_rng()
-        new_rqs = np.zeros(self.size, dtype=np.uint32)    
+        new_rqs = np.zeros(self.num_services, dtype=np.uint32)    
 
         for request_type in range(self.num_services):
             num_new_rqs = rng.poisson(self.avg_requests_per_second)  
             for _ in range(num_new_rqs):
-                active_time = self.determine_active_time(request_type) 
-                rq = self.create_request(request_type, now, active_time)  
+                active_duration = self.determine_active_duration(request_type) 
+                rq = self.create_request(request_type, now, active_duration)  
                 queue[request_type].append(rq)  
                 new_rqs[request_type] += 1   
         
         return new_rqs
 
 class RealTraceGenerator(TrafficGenerator):
-    def __init__(self, active_time_stats_file, arrival_request_stats_file, max_queue_delay=[4], num_services=1):
+    def __init__(self, active_duration_stats_file, arrival_request_stats_file, max_queue_delay=[4], num_services=1):
         self.num_services = num_services
         self.max_queue_delay= max_queue_delay
         self.num_arrival_stats = []
@@ -111,13 +111,13 @@ class RealTraceGenerator(TrafficGenerator):
         self.sigma = []
         self.minimum = []
         self.maximum = []
-        self._get_active_time_stats(active_time_stats_file)
+        self._get_active_duration_stats(active_duration_stats_file)
         self._get_num_arrival_stats(arrival_request_stats_file)
-        # super().__init__(size, avg_requests_per_second, max_queue_delay, max_rq_active_time)
+        # super().__init__(size, avg_requests_per_second, max_queue_delay, max_rq_active_duration)
     
-    def _get_active_time_stats(self, active_time_stats_file):
-        if active_time_stats_file:
-            data = pd.read_csv(active_time_stats_file)
+    def _get_active_duration_stats(self, active_duration_stats_file):
+        if active_duration_stats_file:
+            data = pd.read_csv(active_duration_stats_file)
             for i in range(self.num_services):
                 
                 percentiles = {
@@ -143,7 +143,7 @@ class RealTraceGenerator(TrafficGenerator):
                 self.num_arrival_stats.append(data.iloc[i].dropna().tolist())
                 self.num_arrival_stats[i] = [x / 60 for x in self.num_arrival_stats[i]]
     
-    def determine_active_time(self, service_index):
+    def determine_active_duration(self, service_index):
         return truncated_lognormal_single_sample_fast(self.mu[service_index], 
                                                       self.sigma[service_index], 
                                                       self.minimum[service_index], 
@@ -153,12 +153,11 @@ class RealTraceGenerator(TrafficGenerator):
         rng = np.random.default_rng()
         current_minute = int(np.floor(now / 60))
         new_rqs = np.zeros(self.num_services, dtype=np.uint32)    
-
         for request_type in range(self.num_services):
             num_requests = rng.poisson(self.num_arrival_stats[request_type][current_minute])
             for _ in range(num_requests):
-                active_time = self.determine_active_time(request_type) 
-                request = self.create_request(request_type, now, active_time)  
+                active_duration = self.determine_active_duration(request_type) 
+                request = self.create_request(request_type, now, active_duration)  
                 queue[request_type].append(request)  
                 new_rqs[request_type] += 1   
         return new_rqs
