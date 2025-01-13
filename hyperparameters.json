@@ -4,7 +4,7 @@
         "num_service": 1,
         "step_interval": 120,
         "num_container": [
-            1000
+            500
         ],
         "cont_span": 28800,
         "traffic_generator": "simulated",
@@ -13,7 +13,7 @@
         "rq_timeout": [
             2
         ],
-        "average_requests": 10,
+        "average_requests": 5,
         "max_rq_active_duration": {
             "type": "random",
             "value": [
@@ -29,7 +29,7 @@
         "reward_add": 0
     },
     {
-        "episodes": 10,
+        "episodes": 3,
         "batch_size": 32,
         "max_env_steps": 50,
         "batch_update": 20,

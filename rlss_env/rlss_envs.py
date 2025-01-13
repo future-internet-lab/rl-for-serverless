@@ -1,6 +1,5 @@
 import numpy as np
 import gymnasium as gym
-import rlss_env.request as req
 import math
 
 from rlss_env.request import Request_States
@@ -81,7 +80,8 @@ class ServerlessEnv(gym.Env):
         self.queue_size = queue_size # The size of the queue (currently not used)
         
         self.n_res_types = len([attr for attr in vars(RT) if not attr.startswith('__')]) - 1   
-        self.res_limit = [1000 * 1024, 1000 * 100]  # Set [RAM, CPU] limit of system
+        self.res_limit = [100 * 1024, 100 * 100]  # Set [RAM, CPU] limit of system
+        self.max_num_request = 5000 # The maximum number of requests per time unit
         self.en_price = energy_price # unit cent/Jun/s 
         self.ram_profit = ram_profit # unit cent/Gb/s
         self.cpu_profit = cpu_profit # unit cent/vcpu/s
@@ -124,16 +124,14 @@ class ServerlessEnv(gym.Env):
         
         self.cur_act_idx = 0 # Current action index
         self.cur_act_mtx = np.zeros(shape=(self.n_svc,self.n_ctn_states))
-        # self.pos_act_mtx = self.cur_act_mtx * (self.cur_act_mtx > 0)
-        # self.neg_act_mtx = self.cur_act_mtx * (self.cur_act_mtx < 0)
         self.fmt_act = np.zeros((2,4),dtype=np.int32)
         
         # Create matrix based on self.max_n_ctn
         self._cont_st_mtx_init = np.hstack((
             self.max_n_ctn[:, np.newaxis],  
-            np.zeros((self.max_n_ctn.size, self.n_ctn_states-1), dtype=np.int16)
-        )).astype(np.int16)
-        # self._cont_st_mtx_init = self.gen_rand_cont_mtx()
+            np.zeros((self.max_n_ctn.size, self.n_ctn_states-1), dtype=np.int32)
+        )).astype(np.int32)
+        self._cont_st_mtx_init = self.gen_rand_cont_mtx()
         self._cont_st_mtx = self._cont_st_mtx_init.copy()
 
 
@@ -144,7 +142,7 @@ class ServerlessEnv(gym.Env):
         
         # observation matrix: we use observation and state interchangeably
         # https://spinningup.openai.com/en/latest/spinningup/rl_intro.html#states-and-observations
-        self.obs_mtx = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int16)
+        self.obs_mtx = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int32)
         self.obs_mtx[:,0:self.n_ctn_states] = self._cont_st_mtx
 
         # Our action space is a Box space with a shape of (2, self.n_svc) with diffirent limit for each service column
@@ -160,6 +158,7 @@ class ServerlessEnv(gym.Env):
         self._cal_action_mask()
         
         self.rwd_add = reward_add
+        self.bad_action_penalty = 0
 
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
@@ -174,13 +173,13 @@ class ServerlessEnv(gym.Env):
         Returns:
             gym.spaces.Box: The initialized action space.
         """
-        high_matrix = np.zeros((2,self.n_svc),dtype=np.int16)
+        high_matrix = np.zeros((2,self.n_svc),dtype=np.int32)
         for svc in range(self.n_svc):
             high_matrix[0][svc]=self.max_n_ctn[svc]
             high_matrix[1][svc]= self.n_trans 
             
         # Num container * num transition * num service
-        action_space = gym.spaces.Box(low=1,high=high_matrix,shape=(2,self.n_svc), dtype=np.int16)
+        action_space = gym.spaces.Box(low=1,high=high_matrix,shape=(2,self.n_svc), dtype=np.int32)
         return action_space
     
     
@@ -197,8 +196,8 @@ class ServerlessEnv(gym.Env):
         Returns:
             gym.spaces.Box: The initialized state space with specified bounds and shape.
         """
-        low_matrix = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int16)
-        high_matrix = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int16)
+        low_matrix = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int32)
+        high_matrix = np.zeros((self.n_svc, self.n_ctn_states+1),dtype=np.int32)
         for svc in range(self.n_svc):
             for container_state in range(self.n_ctn_states):
                 # low_matrix[svc][container_state] = -self.max_n_ctn[svc]
@@ -209,7 +208,7 @@ class ServerlessEnv(gym.Env):
             # high_matrix[svc][Request_States.In_System+self.n_ctn_states] = self.max_num_request 
             # high_matrix[svc][Request_States.Rejected+self.n_ctn_states] = self.max_num_request 
             
-        state_space = gym.spaces.Box(low=low_matrix, high=high_matrix, shape=(self.n_svc, self.n_ctn_states+1), dtype=np.int16) 
+        state_space = gym.spaces.Box(low=low_matrix, high=high_matrix, shape=(self.n_svc, self.n_ctn_states+1), dtype=np.int32) 
         return state_space
 
 
@@ -321,7 +320,8 @@ class ServerlessEnv(gym.Env):
 
 
     def _get_reward(self):
-        self.step_rwd = self.rwd_add + self.profit - (self.delay_coff*self.delay_pen + self.aban_coff*self.aban_pen + self.en_coff*self.en_cost)
+        self.step_rwd = self.bad_action_penalty + self.rwd_add + self.profit
+        self.step_rwd -= (self.delay_coff*self.delay_pen + self.aban_coff*self.aban_pen + self.en_coff*self.en_cost)
         return self.step_rwd
     
     def reset(self, seed=42, options=None):
@@ -373,42 +373,46 @@ class ServerlessEnv(gym.Env):
             
     def _set_truncated(self):
         """
-        Checks if the current state or action exceeds resource limits or results in invalid container states,
-        and sets the truncated flag and reason accordingly.
-        This method performs the following checks:
-        1. Computes the temporary resource usage by applying the current action matrix to the container state matrix.
-        2. If the temporary resource usage exceeds the CPU or RAM limits, sets the truncated flag to True and
-           sets the truncated reason to "Resource limit exceeded". Additionally, prints debug information.
-        3. Computes the temporary container state by adding the current action matrix to the container state matrix.
-        4. If any value in the temporary container state is negative, sets the truncated flag to True and
-           sets the truncated reason to "Wrong number action". Additionally, prints debug information.
+        Check and update the truncated and terminated states of the environment based on resource usage and the current action.
+        This function performs the following steps:
+        1. Calculate the total resource usage after applying the action.
+        2. If the resource usage exceeds the resource limit, update the truncated and terminated states, apply a bad action penalty, and log the reason.
+        3. Check the container matrix after applying the action. If any value is less than 0, update the truncated and terminated states, apply a bad action penalty, and log the reason.
         """
-        tmp_res_usage = np.sum(np.dot(self._cont_st_mtx, self.cont_res_usage),axis=0)
-        if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU]
-            or tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
-            self.truncated = True
-            self.truncated_reason = "Resource limit exceeded"
-            print("reason: ", self.truncated_reason)
-            print("container matrix: ", self._cont_st_mtx)
-            print("action matrix: ", self.cur_act_mtx)
-            print("current resource usage: ", self.ptu_res_usage)
-            print("resource if action is applied: ", tmp_res_usage)
-            print("now: ", self.now)
-        else: 
-            pass
-        
         tmp_cont_st = self._cont_st_mtx + self.cur_act_mtx
         if (np.any(tmp_cont_st < 0)):
-            self.truncated = True
-            self.truncated_reason = "Wrong number action"
-            print("reason: ", self.truncated_reason)
-            print("container matrix: ", self._cont_st_mtx)
-            print("action matrix: ", self.cur_act_mtx)
-            print("action index: ", self.cur_act_idx)
-            print("action mask value: ", self.action_mask[self.cur_act_idx])
-            print("now: ", self.now)
-        else: 
-            pass
+            # self.truncated = True
+            self.bad_action_penalty = -1000
+            self.cur_act_mtx.fill(0)
+            self.fmt_act.fill(0)
+            self.truncated_reason += "Wrong number action"
+            
+            # print("reason: ", self.truncated_reason)
+            # print("container matrix: ", self._cont_st_mtx)
+            # print("action matrix: ", self.cur_act_mtx)
+            # print("current resource usage: ", self.ptu_res_usage)
+            # print("resource if action is applied: ", tmp_res_usage)
+            # print("action index: ", self.cur_act_idx)
+            # print("action mask value: ", self.action_mask[self.cur_act_idx])
+            # print("now: ", self.now)
+            
+        tmp_res_usage = np.sum(np.dot(tmp_cont_st, self.cont_res_usage),axis=0)
+        if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU]
+            or tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
+            # self.truncated = True
+            self.bad_action_penalty = -1000
+            self.cur_act_mtx.fill(0)
+            self.fmt_act.fill(0)
+            
+            self.truncated_reason += "Resource limit exceeded,"
+            # print("reason: ", self.truncated_reason)
+            # print("container matrix: ", self._cont_st_mtx)
+            # print("action matrix: ", self.cur_act_mtx)
+            # print("current resource usage: ", self.ptu_res_usage)
+            # print("resource if action is applied: ", tmp_res_usage)
+            # print("action index: ", self.cur_act_idx)
+            # print("action mask value: ", self.action_mask[self.cur_act_idx])
+            # print("now: ", self.now)         
             
               
     def _set_terminated(self):
@@ -437,6 +441,7 @@ class ServerlessEnv(gym.Env):
             self._receive_new_requests()
             # Reset per time unit resource usage matrix
             self.ptu_res_usage  = np.sum(np.dot(self._cont_st_mtx, self.cont_res_usage),axis=0)
+            # print("ptu_res_usage: ", self.ptu_res_usage)
             for svc in range(self.n_svc):
                 trans_num  = self.fmt_act[0][svc] # Number of containers for each service in action matrix
                 trans_type = self.fmt_act[1][svc] # Transition type for each service in action matrix
@@ -465,12 +470,16 @@ class ServerlessEnv(gym.Env):
                         self.aban_pen += self.cont_res_usage[CS.Active][RT.CPU]*self.cpu_profit*req.active_duration
                         continue
                     
-                    # If no available resources, reject the request
+                    # If no available resources, break the loop
                     if self._cont_st_mtx[svc][CS.Warm_CPU] == 0:
                         break
                     if self.ptu_res_usage[RT.CPU] + self.cpu_delta > self.res_limit[RT.CPU]:
+                        print("CPU limit exceeded")
                         break
                     if self.ptu_res_usage[RT.RAM] + self.ram_delta > self.res_limit[RT.RAM]:
+                        print("RAM limit exceeded")
+                        print("current resource usage: ", self.ptu_res_usage)
+                        print("ram_delta", self.ram_delta)
                         break
                     
                     # Accept requests that have not timed out
@@ -528,23 +537,22 @@ class ServerlessEnv(gym.Env):
             self.obs_mtx[svc][self.n_ctn_states+Request_States.In_Queue] = len(self.queued_reqs[svc])
   
     
-    def act_idx_to_mtx(self,act_idx):
+    def act_idx_to_mtx(self):
         """
         Convert an action index to an action matrix.
         This function takes an action index and converts it into a matrix representation
         of the action. The matrix has two rows: the first row represents the number of containers
         for each service, and the second row represents the transition type for each service.
-        Parameters:
-        act_idx (int): The action index to be converted.
         Returns:
         np.ndarray: A 2xN matrix where N is the number of services. The first row contains the
                     number of containers for each service, and the second row contains the
                     transition type for each service.
         """
-        self.cur_act_idx = act_idx
+        act_idx = self.cur_act_idx
         act_mtx = np.zeros((2,self.n_svc),dtype=np.int32)
         lo_idx = 0
         mul = 1 
+        
         for svc in range(self.n_svc-1):
             mul *= (self.max_n_ctn[svc]*self.n_trans + 1)
         
@@ -560,15 +568,17 @@ class ServerlessEnv(gym.Env):
             mul //= (self.max_n_ctn[svc-1]*self.n_trans + 1)
             
         act_mtx = act_mtx.reshape(2,self.n_svc)
+        self.fmt_act = act_mtx
+        
         act_coff = np.diag(act_mtx[0])
         act_unit = []
         for svc in act_mtx[1]:
             act_unit.append(self.TRANS[svc])
         
         self.cur_act_mtx = act_coff @ act_unit
-        return act_mtx
         
-    def _clear_cache(self):
+        
+    def _reset_tmp_vars(self):
         self.new_reqs = [[] for _ in range(self.n_svc)] 
         self.done_reqs = [[] for _ in range(self.n_svc)] 
         self.rej_reqs = [[] for _ in range(self.n_svc)] 
@@ -580,6 +590,7 @@ class ServerlessEnv(gym.Env):
         self.delay_pen = 0
         self.profit = 0
         self.en_cost = 0
+        self.bad_action_penalty = 0
         self.total_new_req.fill(0)
         self.cur_n_queued_req.fill(0)
         self.cur_n_active_req.fill(0)
@@ -587,17 +598,18 @@ class ServerlessEnv(gym.Env):
         self.total_accepted_req.fill(0)
         self.total_rej_req.fill(0)
         self.truncated = False
+        self.truncated_reason = ""
         self.terminated = False
                  
-    def _pre_step(self,action):
-        self._clear_cache()
-        self.fmt_act = self.act_idx_to_mtx(action)
+    def _pre_step(self):
+        self._reset_tmp_vars()
+        self.act_idx_to_mtx()
         self._set_terminated()
         self._set_truncated()
         
-        
     def step(self, action):
-        self._pre_step(action)
+        self.cur_act_idx = action
+        self._pre_step()
         self._do_env()   
         self._cal_sys_eval()
         observation = self._get_obs()
@@ -631,9 +643,9 @@ class ServerlessEnv(gym.Env):
             "energy_consumption": self.cum_res_usage[RT.Power],
             "ram_consumption": self.cum_res_usage[RT.RAM],
             "cpu_consumption": self.cum_res_usage[RT.CPU],
-            "per_second_energy_usage": self.ptu_res_usage [RT.Power],
-            "per_second_ram_usage": self.ptu_res_usage [RT.RAM],
-            "per_second_cpu_usage": self.ptu_res_usage [RT.CPU]
+            "per_second_energy_usage": self.ptu_res_usage[RT.Power],
+            "per_second_ram_usage": self.ptu_res_usage[RT.RAM],
+            "per_second_cpu_usage": self.ptu_res_usage[RT.CPU]
         } 
         return log_data
     

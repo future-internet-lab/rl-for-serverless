@@ -43,10 +43,10 @@ def generate_trans_cost():
         return ret
 
     def transition_L0_to_N(time):
-        return np.array([0, 0, 5 * time, time],dtype=int)
+        return np.array([0, 0, 5 * time, time])
 
     def transition_L0_to_L1(time):
-        return np.array([0, 0, 40 * time, time],dtype=int)
+        return np.array([0, 0, 40 * time, time])
 
     def transition_L0_to_L2(time_2, time_3):
         ret = transition_L0_to_L1(time_2)
@@ -54,13 +54,13 @@ def generate_trans_cost():
         return ret
 
     def transition_L1_to_L0(time):
-        return np.array([0, 0, 5 * time, time],dtype=int)
+        return np.array([0, 0, 5 * time, time])
 
     def transition_L1_to_L2(time):
-        return np.array([0, 0, 40 * time, time],dtype=int)
+        return np.array([0, 0, 40 * time, time])
 
     def transition_L2_to_L1(time):
-        return np.array([0, 0, 10 * time, time],dtype=int)
+        return np.array([0, 0, 10 * time, time])
 
     transitions_cost = np.array([
         transition_no_change(),                              # No change
@@ -117,4 +117,4 @@ def generate_container_resource_usage():
 REQ_RES_USAGE = np.array([np.array([0, 0, 0]),
                           np.array([20, 20, 0]),
                           np.array([30, 30, 0]),
-                          np.array([40, 40, 0])])
+                          np.array([40, 40, 0])]).astype(int)
