@@ -101,7 +101,7 @@ def generate_container_resource_usage():
     def state_A(time):
         cpu_percent = 0.05 + (0.1 * time)
         power = cpu_percent * 200
-        return np.array([20 * time, cpu_percent, power])
+        return np.array([25 * time, cpu_percent, power])
 
     container_resource_usage = np.array([
         state_N(),   # N
