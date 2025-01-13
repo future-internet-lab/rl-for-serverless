@@ -56,13 +56,14 @@ class ServerlessEnv(gym.Env):
                                  8: CS.Warm_CPU,
                                  }
         
-        self.cont_res_usage = None # Container resource usage
-        self.trans_cost = None # Transition cost
+        self.cont_res_usage = None # Container resource usage [RAM, CPU, Power]
+        self.trans_cost = None # Transition cost [RAM, CPU, Power, Time]
         self.get_res_profile(profiling_path, custom_profiling)
         # We use this multiple times, so we store it as an attribute
         self.cpu_delta = self.cont_res_usage[CS.Active][RT.CPU] - self.cont_res_usage[CS.Warm_CPU][RT.CPU]
         self.ram_delta = self.cont_res_usage[CS.Active][RT.RAM] - self.cont_res_usage[CS.Warm_CPU][RT.RAM]
-        
+        # print("ram_delta", self.ram_delta)
+        # print("cpu_delta", self.cpu_delta)
         
         self.now = 0  # Start at time 0
         self.step_interval = step_interval # The step_interval of time between two steps
@@ -131,7 +132,7 @@ class ServerlessEnv(gym.Env):
             self.max_n_ctn[:, np.newaxis],  
             np.zeros((self.max_n_ctn.size, self.n_ctn_states-1), dtype=np.int32)
         )).astype(np.int32)
-        self._cont_st_mtx_init = self.gen_rand_cont_mtx()
+        # self._cont_st_mtx_init = self.gen_rand_cont_mtx()
         self._cont_st_mtx = self._cont_st_mtx_init.copy()
 
 
@@ -251,6 +252,17 @@ class ServerlessEnv(gym.Env):
         ret *= compute_formula(self.n_req_states,int(2*self.queue_size))
         return ret
 
+    def _res_action_masking(self):
+        for svc in range(self.n_svc):
+            for i in range(self.lo_action_size[svc]):
+                if self.action_mask[i] == 1:
+                    self.cur_act_idx = i
+                    self.act_idx_to_mtx()
+                    tmp_cont_st = self._cont_st_mtx + self.cur_act_mtx
+                    tmp_res_usage = np.sum(np.dot(tmp_cont_st, self.cont_res_usage),axis=0)
+                    if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU] or 
+                        tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
+                        self.action_mask[i] = 0
 
     def _cal_action_mask(self):
         """"
@@ -282,8 +294,8 @@ class ServerlessEnv(gym.Env):
                     self.action_mask_raw[tuple(slices)] = 0
         
         self.action_mask = self.action_mask_raw.ravel(order='F') # Flattened action mask (column-major order)
-            
-                 
+        self._res_action_masking()
+                    
     def gen_rand_cont_mtx(self):
         ret = np.zeros(shape=(len(self.max_n_ctn), self.n_ctn_states),dtype=np.int64)     
         for svc in range(self.n_svc):
@@ -382,37 +394,37 @@ class ServerlessEnv(gym.Env):
         tmp_cont_st = self._cont_st_mtx + self.cur_act_mtx
         if (np.any(tmp_cont_st < 0)):
             # self.truncated = True
-            self.bad_action_penalty = -1000
-            self.cur_act_mtx.fill(0)
-            self.fmt_act.fill(0)
+            # self.bad_action_penalty = -1000
+            # self.cur_act_mtx.fill(0)
+            # self.fmt_act.fill(0)
             self.truncated_reason += "Wrong number action"
             
-            # print("reason: ", self.truncated_reason)
-            # print("container matrix: ", self._cont_st_mtx)
-            # print("action matrix: ", self.cur_act_mtx)
-            # print("current resource usage: ", self.ptu_res_usage)
-            # print("resource if action is applied: ", tmp_res_usage)
-            # print("action index: ", self.cur_act_idx)
-            # print("action mask value: ", self.action_mask[self.cur_act_idx])
-            # print("now: ", self.now)
+            print("reason: ", self.truncated_reason)
+            print("container matrix: ", self._cont_st_mtx)
+            print("action matrix: ", self.cur_act_mtx)
+            print("current resource usage: ", self.ptu_res_usage)
+            print("resource if action is applied: ", tmp_res_usage)
+            print("action index: ", self.cur_act_idx)
+            print("action mask value: ", self.action_mask[self.cur_act_idx])
+            print("now: ", self.now)
             
         tmp_res_usage = np.sum(np.dot(tmp_cont_st, self.cont_res_usage),axis=0)
         if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU]
             or tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
             # self.truncated = True
-            self.bad_action_penalty = -1000
-            self.cur_act_mtx.fill(0)
-            self.fmt_act.fill(0)
+            # self.bad_action_penalty = -1000
+            # self.cur_act_mtx.fill(0)
+            # self.fmt_act.fill(0)
             
             self.truncated_reason += "Resource limit exceeded,"
-            # print("reason: ", self.truncated_reason)
-            # print("container matrix: ", self._cont_st_mtx)
-            # print("action matrix: ", self.cur_act_mtx)
-            # print("current resource usage: ", self.ptu_res_usage)
-            # print("resource if action is applied: ", tmp_res_usage)
-            # print("action index: ", self.cur_act_idx)
-            # print("action mask value: ", self.action_mask[self.cur_act_idx])
-            # print("now: ", self.now)         
+            print("reason: ", self.truncated_reason)
+            print("container matrix: ", self._cont_st_mtx)
+            print("action matrix: ", self.cur_act_mtx)
+            print("current resource usage: ", self.ptu_res_usage)
+            print("resource if action is applied: ", tmp_res_usage)
+            print("action index: ", self.cur_act_idx)
+            print("action mask value: ", self.action_mask[self.cur_act_idx])
+            print("now: ", self.now)         
             
               
     def _set_terminated(self):
@@ -474,12 +486,11 @@ class ServerlessEnv(gym.Env):
                     if self._cont_st_mtx[svc][CS.Warm_CPU] == 0:
                         break
                     if self.ptu_res_usage[RT.CPU] + self.cpu_delta > self.res_limit[RT.CPU]:
-                        print("CPU limit exceeded")
+                        # print("CPU limit exceeded")
                         break
                     if self.ptu_res_usage[RT.RAM] + self.ram_delta > self.res_limit[RT.RAM]:
-                        print("RAM limit exceeded")
-                        print("current resource usage: ", self.ptu_res_usage)
-                        print("ram_delta", self.ram_delta)
+                        # print("RAM limit exceeded")
+                        # print("current resource usage: ", self.ptu_res_usage)
                         break
                     
                     # Accept requests that have not timed out
