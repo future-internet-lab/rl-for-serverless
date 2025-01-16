@@ -253,6 +253,9 @@ class ServerlessEnv(gym.Env):
         return ret
 
     def _res_action_masking(self):
+        cur_act_idx = self.cur_act_idx
+        cur_act_mtx = self.cur_act_mtx
+        cur_fmt_act = self.fmt_act
         for svc in range(self.n_svc):
             for i in range(self.lo_action_size[svc]):
                 if self.action_mask[i] == 1:
@@ -263,6 +266,9 @@ class ServerlessEnv(gym.Env):
                     if (tmp_res_usage[RT.CPU] > self.res_limit[RT.CPU] or 
                         tmp_res_usage[RT.RAM] > self.res_limit[RT.RAM]):
                         self.action_mask[i] = 0
+        self.cur_act_idx = cur_act_idx
+        self.cur_act_mtx = cur_act_mtx
+        self.fmt_act = cur_fmt_act
 
     def _cal_action_mask(self):
         """"
