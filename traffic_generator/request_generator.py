@@ -156,7 +156,7 @@ class RealTraceGenerator(TrafficGenerator):
         for request_type in range(self.num_services):
             num_requests = rng.poisson(self.num_arrival_stats[request_type][current_minute])
             for _ in range(num_requests):
-                active_duration = self.determine_active_duration(request_type) 
+                active_duration = np.ceil(self.determine_active_duration(request_type)/1000)
                 request = self.create_request(request_type, now, active_duration)  
                 queue[request_type].append(request)  
                 new_rqs[request_type] += 1   
