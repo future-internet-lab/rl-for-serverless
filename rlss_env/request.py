@@ -57,3 +57,8 @@ class Request():
     
     def set_state(self, state):
         self.state = state
+        
+    def __eq__(self, other):
+        if not isinstance(other, Request):
+            return False  
+        return self._uuid == other._uuid 

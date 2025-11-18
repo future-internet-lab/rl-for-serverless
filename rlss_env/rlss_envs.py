@@ -34,27 +34,6 @@ class ServerlessEnv(gym.Env):
         reward_add (int, optional): Additional to make the reward positive. Defaults to 0.
         """
         super(ServerlessEnv, self).__init__() 
-         
-        self.TRANS = np.array([np.array([0, 0, 0, 0, 0]),    # No change
-                               np.array([-1, 1, 0, 0, 0]),   # Null -> Cold
-                               np.array([-1, 0, 0, 1, 0]),   # Null -> Warm_cpu (skip)
-                               np.array([1, -1, 0, 0, 0]),   # Cold -> Null
-                               np.array([0, -1, 1, 0, 0]),   # Cold -> Warm_disk
-                               np.array([0, -1, 0, 1, 0]),   # Cold -> Warm_cpu (skip)
-                               np.array([0, 1, -1, 0, 0]),   # Warm_disk -> Cold
-                               np.array([0, 0, -1, 1, 0]),   # Warm_disk -> Warm_cpu 
-                               np.array([0, 0, 1, -1, 0]),   # Warm_cpu -> Warm_disk
-                               ])
-
-        self.TRANS_ST_MAPPING = {1: CS.Null,
-                                 2: CS.Null,
-                                 3: CS.Cold,
-                                 4: CS.Cold,
-                                 5: CS.Cold,
-                                 6: CS.Warm_Disk,
-                                 7: CS.Warm_Disk,
-                                 8: CS.Warm_CPU,
-                                 }
         
         self.cont_res_usage = None # Container resource usage [RAM, CPU, Power]
         self.trans_cost = None # Transition cost [RAM, CPU, Power, Time]
@@ -164,7 +143,7 @@ class ServerlessEnv(gym.Env):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
-     
+
     def action_space_init(self):
         """
         Initializes the action space for the environment.
